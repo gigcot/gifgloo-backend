@@ -3,17 +3,17 @@ from dataclasses import dataclass
 
 
 @dataclass
-class AiCompositionRequest:
+class ImageCompositionRequest:
     base_url: str
     overlay_url: str
 
 
 @dataclass
-class AiCompositionResult:
+class ImageCompositionResult:
     result_url: str
 
 
-class AiModelPort(ABC):
+class ImageCompositionPort(ABC):
     @abstractmethod
-    def compose(self, request: AiCompositionRequest) -> AiCompositionResult:
+    def compose(self, request: ImageCompositionRequest) -> ImageCompositionResult:
         pass

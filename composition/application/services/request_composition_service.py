@@ -3,7 +3,7 @@ from composition.application.ports.inbound.request_composition import (
     RequestCompositionCommand,
     RequestCompositionResult,
 )
-from composition.application.ports.outbound.ai_model_port import AiCompositionRequest, AiModelPort
+from composition.application.ports.outbound.image_composition_port import ImageCompositionRequest, ImageCompositionPort
 from composition.application.ports.outbound.asset_fetch_port import AssetFetchPort
 from composition.application.ports.outbound.composition_repository import CompositionRepository
 from composition.application.ports.outbound.credit_port import CreditPort
@@ -18,7 +18,7 @@ class RequestCompositionService(RequestCompositionPort):
         user_verification: UserVerificationPort,
         credit: CreditPort,
         asset_fetch: AssetFetchPort,
-        ai_model: AiModelPort,
+        ai_model: ImageCompositionPort,
         composition_repo: CompositionRepository,
     ):
         self._user_verification = user_verification
@@ -63,7 +63,7 @@ class RequestCompositionService(RequestCompositionPort):
         # 6. AI 모델 호출 및 처리
         job.start_processing()
         ai_result = self._ai_model.compose(
-            AiCompositionRequest(
+            ImageCompositionRequest(
                 base_url=base_info.url,
                 overlay_url=overlay_info.url,
             )
