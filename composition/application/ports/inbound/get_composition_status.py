@@ -1,7 +1,7 @@
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 
-from composition.domain.entities.composition_frame import CompositionStatus
+from composition.domain.value_objects.composition_status import CompositionStatus
 
 
 @dataclass

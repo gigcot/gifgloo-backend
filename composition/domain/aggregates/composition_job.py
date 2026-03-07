@@ -1,11 +1,12 @@
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Optional
 import uuid
 
-from composition.domain.entities.composition_frame import CompositionFrame, CompositionStatus
+from composition.domain.entities.composition_frame import CompositionFrame
 from composition.domain.value_objects.composition_image import CompositionImage
+from composition.domain.value_objects.composition_status import CompositionStatus
 from composition.domain.value_objects.composition_type import CompositionType, CompositionTypeValue
 
 
@@ -25,7 +26,7 @@ class CompositionJob:
         self.frames: list[CompositionFrame] = []
         self.result_asset_id: Optional[str] = None
         self.failed_reason: Optional[str] = None
-        self.created_at: datetime = datetime.utcnow()
+        self.created_at: datetime = datetime.now(timezone.utc)
 
     # ── 상태 전이 ──
 

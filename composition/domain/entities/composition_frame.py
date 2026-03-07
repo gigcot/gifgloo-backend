@@ -1,13 +1,7 @@
-from enum import Enum
 from typing import Optional
 import uuid
+from composition.domain.value_objects.composition_status import CompositionStatus
 
-
-class CompositionStatus(Enum):
-    PENDING    = "PENDING"
-    PROCESSING = "PROCESSING"
-    COMPLETED  = "COMPLETED"
-    FAILED     = "FAILED"
 
 
 class CompositionFrame:
