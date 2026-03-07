@@ -34,3 +34,7 @@ wheels/
 *.egg-info/
 .installed.cfg
 *.egg
+
+---
+
+cc_prompt/
