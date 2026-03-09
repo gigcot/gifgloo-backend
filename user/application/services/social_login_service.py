@@ -20,8 +20,8 @@ class SocialLoginService(SocialLoginPort):
         self._user_repo = user_repo
 
     def execute(self, command: SocialLoginCommand) -> SocialLoginResult:
-        # 1. 소셜 제공자에서 유저 정보 조회
-        social_info = self._social_provider.get_user_info(command.access_token)
+        # 1. 소셜 제공자에서 유저 정보 조회 (code → token → user_info 는 어댑터가 처리)
+        social_info = self._social_provider.get_user_info(command.code)
 
         # 2. DB에서 유저 찾기
         social_account = SocialAccount(

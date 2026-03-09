@@ -14,5 +14,5 @@ class SocialUserInfo:
 
 class SocialProviderPort(ABC):
     @abstractmethod
-    def get_user_info(self, access_token: str) -> SocialUserInfo:
+    def get_user_info(self, auth_code: str) -> SocialUserInfo:
         pass

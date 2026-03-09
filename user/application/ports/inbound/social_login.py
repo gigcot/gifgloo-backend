@@ -7,7 +7,7 @@ from user.domain.value_objects.social_account import SocialProvider
 @dataclass
 class SocialLoginCommand:
     provider: SocialProvider
-    access_token: str
+    code: str
 
 
 @dataclass
