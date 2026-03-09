@@ -4,6 +4,7 @@ from composition.application.ports.inbound.get_composition_status import GetComp
 from composition.application.ports.inbound.request_composition import RequestCompositionCommand
 from composition.application.services.get_composition_status_service import GetCompositionStatusService
 from composition.application.services.request_composition_service import RequestCompositionService
+from config.composition import get_request_composition_service, get_composition_status_service
 from pydantic import BaseModel
 
 router = APIRouter(prefix="/compositions", tags=["composition"])
@@ -17,7 +18,7 @@ class RequestCompositionBody(BaseModel):
 @router.post("")
 def request_composition(
     body: RequestCompositionBody,
-    service: RequestCompositionService = Depends(),
+    service: RequestCompositionService = Depends(get_request_composition_service),
     # TODO: 인증에서 user_id 추출 (JWT 등)
     user_id: str = "temp_user_id",
 ):
@@ -34,7 +35,7 @@ def request_composition(
 @router.get("/{composition_job_id}")
 def get_composition_status(
     composition_job_id: str,
-    service: GetCompositionStatusService = Depends(),
+    service: GetCompositionStatusService = Depends(get_composition_status_service),
     user_id: str = "temp_user_id",
 ):
     result = service.execute(
