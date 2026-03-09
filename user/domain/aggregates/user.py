@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import datetime, timezone
 from enum import Enum
 from typing import Optional
 import uuid
@@ -31,7 +31,7 @@ class User:
         self.email: Optional[Email] = email
         self.role: UserRole = role
         self.status: UserStatus = UserStatus.ACTIVE
-        self.created_at: datetime = datetime.utcnow()
+        self.created_at: datetime = datetime.now(timezone.utc)
 
     def deactivate(self) -> None:
         if self.status == UserStatus.INACTIVE:
