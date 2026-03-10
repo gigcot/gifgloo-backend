@@ -1,12 +1,14 @@
 import os
 import jwt
 from dotenv import load_dotenv
-from fastapi import APIRouter
+from fastapi import APIRouter, Depends
 from fastapi.responses import RedirectResponse
+from sqlalchemy.orm import Session
 
+from config.database import get_db
 from user.adapter.outbound.social.kakao_social_provider_adapter import KakaoSocialProviderAdapter
 from user.adapter.outbound.social.google_social_provider_adapter import GoogleSocialProviderAdapter
-from user.adapter.outbound.persistence.mock.in_memory_user_repository import InMemoryUserRepository
+from user.adapter.outbound.persistence.sqlalchemy_user_repository import SqlAlchemyUserRepository
 from user.application.ports.inbound.social_login import SocialLoginCommand
 from user.application.services.social_login_service import SocialLoginService
 from user.domain.value_objects.social_account import SocialProvider
@@ -25,10 +27,10 @@ FRONTEND_CALLBACK_URL = "http://localhost:3000/callback"
 SECRET_KEY = os.getenv("JWT_SECRET_KEY")
 
 
-def _make_service(adapter):
+def _make_service(adapter, db: Session):
     return SocialLoginService(
         social_provider=adapter,
-        user_repo=InMemoryUserRepository(),
+        user_repo=SqlAlchemyUserRepository(db),
     )
 
 
@@ -63,8 +65,8 @@ def kakao_login():
 
 
 @router.get("/kakao/callback")
-def kakao_callback(code: str):
-    result = _make_service(KakaoSocialProviderAdapter()).execute(
+def kakao_callback(code: str, db: Session = Depends(get_db)):
+    result = _make_service(KakaoSocialProviderAdapter(), db).execute(
         SocialLoginCommand(provider=SocialProvider.KAKAO, code=code)
     )
     return _redirect_with_cookie(result.user_id)
@@ -85,8 +87,8 @@ def google_login():
 
 
 @router.get("/google/callback")
-def google_callback(code: str):
-    result = _make_service(GoogleSocialProviderAdapter()).execute(
+def google_callback(code: str, db: Session = Depends(get_db)):
+    result = _make_service(GoogleSocialProviderAdapter(), db).execute(
         SocialLoginCommand(provider=SocialProvider.GOOGLE, code=code)
     )
     return _redirect_with_cookie(result.user_id)
