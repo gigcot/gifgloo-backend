@@ -3,17 +3,18 @@ from dataclasses import dataclass
 
 
 @dataclass
-class UploadToS3Command:
+class StorageUploadCommand:
     asset_id: str
     asset_type: str
     image_data: bytes
 
+
 @dataclass
-class UploadToS3Result:
+class StorageUploadResult:
     storage_url: str
 
-class UploadToS3Port(ABC):
-    @abstractmethod
-    def execute(self, command: UploadToS3Command) -> UploadToS3Result:
-        pass
 
+class StorageUploadPort(ABC):
+    @abstractmethod
+    def execute(self, command: StorageUploadCommand) -> StorageUploadResult:
+        pass

@@ -1,7 +1,7 @@
 from asset.application.dto import AssetCategory
 from asset.application.ports.inbound.save import SaveAssetCommand, SaveAssetPort
 from asset.application.ports.outbound.persistence.asset_repository import AssetRepositoryPort
-from asset.application.ports.outbound.s3.upload import UploadToS3Command, UploadToS3Port
+from asset.application.ports.outbound.storage.upload import StorageUploadCommand, StorageUploadPort
 from asset.domain.aggregates.asset import Asset
 from asset.domain.value_objects.storage_url import StorageUrl
 from asset.application.ports.outbound.user_verification_port import UserVerificationPort
@@ -12,7 +12,7 @@ class SaveAssetService(SaveAssetPort):
             self,
             user_verification: UserVerificationPort,
             asset_repo: AssetRepositoryPort,
-            external_storage: UploadToS3Port,            
+            external_storage: StorageUploadPort,
     ):
         self._user_verification = user_verification
         self._asset_repo = asset_repo
@@ -33,7 +33,7 @@ class SaveAssetService(SaveAssetPort):
         storage_url = None
 
         if category == AssetCategory.INTERNAL:
-            save_result = self._external_storage.execute(UploadToS3Command(asset_id, command.asset_type, command.image_data))
+            save_result = self._external_storage.execute(StorageUploadCommand(asset_id, command.asset_type, command.image_data))
             storage_url = save_result.storage_url
         
         asset = Asset(
