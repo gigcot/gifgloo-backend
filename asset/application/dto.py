@@ -1,10 +1,11 @@
 from dataclasses import dataclass
 from enum import Enum
 
-@dataclass
 class AssetCategory(Enum):
-    EXTERNAL = "EXETERNAL"
-    INTERNAL = "INTERNAL"
+    KLIPY_GIF = "KLIPY_GIF"
+    USER_UPLOAD = "USER_UPLOAD"
+    COMPOSITION_DRAFT = "COMPOSITION_DRAFT"
+    COMPOSITION_RESULT = "COMPOSITION_RESULT"
 
 @dataclass
 class AssetDto:

@@ -3,7 +3,7 @@ from composition.application.ports.inbound.get_composition_status import (
     GetCompositionStatusQuery,
     GetCompositionStatusResult,
 )
-from composition.application.ports.outbound.composition_repository import CompositionRepository
+from composition.application.ports.outbound.persistence.composition_repository import CompositionRepository
 
 
 class GetCompositionStatusService(GetCompositionStatusPort):

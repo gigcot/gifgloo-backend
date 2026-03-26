@@ -1,64 +1,73 @@
-from typing import Optional
+from fastapi import Depends
+from sqlalchemy.orm import Session
 
+from config.database import get_db
+
+# --- User domain ---
+from user.adapter.outbound.persistence.sqlalchemy_user_repository import SqlAlchemyUserRepository
+from user.application.services.verify_user_service import VerifyUserService
+
+# --- Credit domain ---
+from credit_account.adapter.outbound.sql_alchemy_credit_account_repository import SqlAlchemyCreditAccountRepository
+from credit_account.adapter.outbound.user_verification import UserVerificationAdapter as CreditUserVerificationAdapter
+from credit_account.application.services.get_credit_balance_service import GetCreditBalanceService
+from credit_account.application.services.deduct_credit_service import DeductCreditService
+from credit_account.application.services.refund_credit_service import RefundCreditService
+
+# --- Asset domain ---
+from asset.adapter.outbound.sql_alchemy_asset_repository import SqlAlchemyAssetRepository
+from asset.adapter.outbound.r2_storage_adapter import R2UploadAdapter
+from asset.adapter.outbound.user_verification import UserVerificationAdapter as AssetUserVerificationAdapter
+from asset.application.services.save_asset_service import SaveAssetService
+
+# --- Composition adapters ---
+from composition.adapter.outbound.domain_bridges.user_verification_adapter import UserVerificationAdapter
+from composition.adapter.outbound.domain_bridges.credit_adapter import CreditAdapter
+from composition.adapter.outbound.domain_bridges.asset_save_adapter import AssetSaveAdapter
+from composition.adapter.outbound.persistence.sqlalchemy_composition_repository import SqlAlchemyCompositionRepository
+from composition.adapter.outbound.aws.lambda_feasibility_check_adapter import LambdaFeasibilityCheckAdapter
+from composition.adapter.outbound.aws.lambda_gif_processing_adapter import LambdaGifProcessingAdapter
+from composition.adapter.outbound.aws.r2_storage_adapter import R2StorageAdapter
+from composition.adapter.outbound.ai.openai_composition_analysis_adapter import OpenAiCompositionAnalysisAdapter
+from composition.adapter.outbound.ai.openai_inpainting_adapter import OpenAiInpaintingAdapter
+
+# --- Services ---
 from composition.application.services.request_composition_service import RequestCompositionService
 from composition.application.services.get_composition_status_service import GetCompositionStatusService
-from composition.application.ports.outbound.user_verification_port import UserVerificationPort
-from composition.application.ports.outbound.credit_port import CreditPort
-from composition.application.ports.outbound.asset_fetch_port import AssetFetchPort, AssetInfo
-from composition.application.ports.outbound.image_composition_port import (
-    ImageCompositionPort,
-    ImageCompositionRequest,
-    ImageCompositionResult,
-)
-from composition.application.ports.outbound.composition_repository import CompositionRepository
-from composition.domain.aggregates.composition_job import CompositionJob
-from composition.domain.value_objects.composition_image import ImageFormat
 
 
-# TODO: 실제 어댑터로 교체 예정 — DB/API 연결 구현 후
+def get_request_composition_service(db: Session = Depends(get_db)) -> RequestCompositionService:
+    # 공통: User 검증 서비스
+    user_repo = SqlAlchemyUserRepository(db)
+    verify_user_service = VerifyUserService(user_repo)
 
-class _StubUserVerification(UserVerificationPort):
-    def is_active_user(self, user_id: str) -> bool:
-        return True
+    # Credit 서비스들
+    credit_repo = SqlAlchemyCreditAccountRepository(db)
+    credit_user_verification = CreditUserVerificationAdapter(verify_user_service)
+    get_balance_service = GetCreditBalanceService(credit_user_verification, credit_repo)
+    deduct_service = DeductCreditService(credit_user_verification, credit_repo)
+    refund_service = RefundCreditService(credit_repo)
 
+    # Asset 저장 서비스
+    asset_repo = SqlAlchemyAssetRepository(db)
+    asset_user_verification = AssetUserVerificationAdapter(verify_user_service)
+    asset_storage = R2UploadAdapter()
+    save_asset_service = SaveAssetService(asset_user_verification, asset_repo, asset_storage)
 
-class _StubCredit(CreditPort):
-    def has_enough_credit(self, user_id: str) -> bool:
-        return True
-
-    def deduct(self, user_id: str) -> None:
-        pass
-
-
-class _StubAssetFetch(AssetFetchPort):
-    def fetch(self, asset_id: str) -> AssetInfo:
-        return AssetInfo(asset_id=asset_id, url="https://stub.url", format=ImageFormat.PNG)
-
-
-class _StubImageComposition(ImageCompositionPort):
-    def compose(self, request: ImageCompositionRequest) -> ImageCompositionResult:
-        return ImageCompositionResult(result_url="https://stub.result.url")
-
-
-class _StubCompositionRepository(CompositionRepository):
-    def save(self, job: CompositionJob) -> None:
-        pass
-
-    def find_by_id(self, job_id: str) -> Optional[CompositionJob]:
-        return None
-
-
-def get_request_composition_service() -> RequestCompositionService:
     return RequestCompositionService(
-        user_verification=_StubUserVerification(),
-        credit=_StubCredit(),
-        asset_fetch=_StubAssetFetch(),
-        ai_model=_StubImageComposition(),
-        composition_repo=_StubCompositionRepository(),
+        user_verification=UserVerificationAdapter(verify_user_service),
+        credit=CreditAdapter(get_balance_service, deduct_service, refund_service),
+        feasibility=LambdaFeasibilityCheckAdapter(),
+        gif_processor=LambdaGifProcessingAdapter(),
+        analysis=OpenAiCompositionAnalysisAdapter(),
+        inpainting=OpenAiInpaintingAdapter(),
+        storage=R2StorageAdapter(),
+        asset_save=AssetSaveAdapter(save_asset_service),
+        composition_repo=SqlAlchemyCompositionRepository(db),
     )
 
 
-def get_composition_status_service() -> GetCompositionStatusService:
+def get_composition_status_service(db: Session = Depends(get_db)) -> GetCompositionStatusService:
     return GetCompositionStatusService(
-        composition_repo=_StubCompositionRepository(),
+        composition_repo=SqlAlchemyCompositionRepository(db),
     )

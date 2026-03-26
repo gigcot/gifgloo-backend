@@ -38,3 +38,5 @@ wheels/
 ---
 
 cc_prompt/
+.claude/
+tests/

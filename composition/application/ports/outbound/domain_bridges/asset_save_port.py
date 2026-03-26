@@ -4,16 +4,15 @@ from typing import Optional
 
 
 @dataclass
-class SaveAssetCommand:
+class AssetSaveCommand:
     user_id: str
     category: str
-    asset_type: str
     url: Optional[str] = None
     image_data: Optional[bytes] = None
 
 
-class SaveAssetPort(ABC):
+class AssetSavePort(ABC):
     @abstractmethod
-    def execute(self, command: SaveAssetCommand) -> str:
+    def save(self, command: AssetSaveCommand) -> str:
         """저장 후 asset_id 반환"""
         pass

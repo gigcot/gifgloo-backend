@@ -1,15 +1,20 @@
+import asyncio
+
 from composition.application.ports.inbound.request_composition import (
     RequestCompositionPort,
     RequestCompositionCommand,
     RequestCompositionResult,
 )
-from composition.application.ports.outbound.image_composition_port import ImageCompositionRequest, ImageCompositionPort
-from composition.application.ports.outbound.asset_fetch_port import AssetFetchPort
-from composition.application.ports.outbound.composition_repository import CompositionRepository
-from composition.application.ports.outbound.credit_port import CreditPort
-from composition.application.ports.outbound.user_verification_port import UserVerificationPort
+from composition.application.ports.outbound.aws.feasibility_check_port import FeasibilityCheckPort, FeasibilityCheckCommand
+from composition.application.ports.outbound.aws.gif_processing_port import GifProcessingPort
+from composition.application.ports.outbound.ai.composition_analysis_port import CompositionAnalysisPort, CompositionAnalysisCommand
+from composition.application.ports.outbound.ai.image_inpainting_port import ImageInpaintingPort, DraftGenerationCommand, FrameCompositingCommand
+from composition.application.ports.outbound.aws.storage_port import StoragePort
+from composition.application.ports.outbound.domain_bridges.credit_port import CreditPort
+from composition.application.ports.outbound.domain_bridges.user_verification_port import UserVerificationPort
+from composition.application.ports.outbound.persistence.composition_repository import CompositionRepository
+from composition.application.ports.outbound.domain_bridges.asset_save_port import AssetSavePort, AssetSaveCommand
 from composition.domain.aggregates.composition_job import CompositionJob
-from composition.domain.value_objects.composition_image import CompositionImage, ImageRole
 
 
 class RequestCompositionService(RequestCompositionPort):
@@ -17,60 +22,127 @@ class RequestCompositionService(RequestCompositionPort):
         self,
         user_verification: UserVerificationPort,
         credit: CreditPort,
-        asset_fetch: AssetFetchPort,
-        ai_model: ImageCompositionPort,
+        feasibility: FeasibilityCheckPort,
+        gif_processor: GifProcessingPort,
+        analysis: CompositionAnalysisPort,
+        inpainting: ImageInpaintingPort,
+        storage: StoragePort,
+        asset_save: AssetSavePort,
         composition_repo: CompositionRepository,
     ):
         self._user_verification = user_verification
         self._credit = credit
-        self._asset_fetch = asset_fetch
-        self._ai_model = ai_model
+        self._feasibility = feasibility
+        self._gif_processor = gif_processor
+        self._analysis = analysis
+        self._inpainting = inpainting
+        self._storage = storage
+        self._asset_save = asset_save
         self._composition_repo = composition_repo
 
-    def execute(self, command: RequestCompositionCommand) -> RequestCompositionResult:
-        # 1. 유저 유효성 확인
+    async def execute(self, command: RequestCompositionCommand) -> RequestCompositionResult:
+        # 1. 유저 검증
         if not self._user_verification.is_active_user(command.user_id):
             raise ValueError("유효하지 않은 유저입니다")
 
-        # 2. 크레딧 확인
+        # 2. 잔액 확인
         if not self._credit.has_enough_credit(command.user_id):
             raise ValueError("크레딧이 부족합니다")
 
-        # 3. 에셋 정보 조회 (포맷 포함)
-        base_info = self._asset_fetch.fetch(command.base_asset_id)
-        overlay_info = self._asset_fetch.fetch(command.overlay_asset_id)
-
-        # 4. CompositionJob 생성 (도메인 규칙 적용)
-        base_image = CompositionImage(
-            asset_id=base_info.asset_id,
-            role=ImageRole.BASE,
-            format=base_info.format,
-        )
-        overlay_image = CompositionImage(
-            asset_id=overlay_info.asset_id,
-            role=ImageRole.OVERLAY,
-            format=overlay_info.format,
-        )
-        job = CompositionJob(
-            user_id=command.user_id,
-            base_image=base_image,
-            overlay_image=overlay_image,
-        )
-
-        # 5. 크레딧 차감
-        self._credit.deduct(command.user_id)
-
-        # 6. AI 모델 호출 및 처리
-        job.start_processing()
-        ai_result = self._ai_model.compose(
-            ImageCompositionRequest(
-                base_url=base_info.url,
-                overlay_url=overlay_info.url,
-            )
-        )
-
-        # 7. 완료 처리 및 저장
-        job.complete(ai_result.result_url)
+        # 3. Job 생성 + DB 저장
+        job = CompositionJob(user_id=command.user_id)
         self._composition_repo.save(job)
 
-        return RequestCompositionResult(composition_job_id=job.id)
+        try:
+            # 4. Feasibility check (무료)
+            feasibility = self._feasibility.check(
+                FeasibilityCheckCommand(
+                    gif_bytes=command.gif_bytes,
+                    target_bytes=command.target_bytes,
+                )
+            )
+            if not feasibility.ok:
+                job.fail(feasibility.reason)
+                self._composition_repo.save(job)
+                raise ValueError(feasibility.reason)
+
+            # 5. 크레딧 차감 (여기서부터 비용 발생)
+            self._credit.deduct(command.user_id)
+        except ValueError:
+            raise
+        except Exception as e:
+            job.fail(str(e))
+            self._composition_repo.save(job)
+            raise
+
+        try:
+            # 6. GIF 프레임 추출
+            gif_result = self._gif_processor.extract_frames(command.gif_bytes)
+            frames = [f.png_bytes for f in gif_result.frames]
+            durations = [f.duration_ms for f in gif_result.frames]
+
+            # 7. Composition Analysis (LLM)
+            job.start_processing()
+            spec = await self._analysis.analyze(
+                CompositionAnalysisCommand(frames=frames, target=command.target_bytes)
+            )
+
+            # 8. Draft 생성
+            draft_bytes = await self._inpainting.generate_draft(
+                DraftGenerationCommand(
+                    target=command.target_bytes,
+                    spec=spec,
+                    frames=frames if spec.draft_reference_frame is not None else None,
+                )
+            )
+
+            # 9. 프레임별 병렬 합성
+            async def composite_one(idx: int) -> bytes:
+                return await self._inpainting.composite_frame(
+                    FrameCompositingCommand(
+                        frame=frames[idx],
+                        draft=draft_bytes,
+                        spec=spec,
+                        frame_idx=idx,
+                    )
+                )
+
+            composited_frames = await asyncio.gather(*[composite_one(i) for i in range(len(frames))])
+
+            # 10. GIF 조합
+            result_gif_bytes = self._gif_processor.build_gif(list(composited_frames), durations)
+
+            # 11. R2 업로드 (target, draft, result)
+            target_url = await self._storage.upload(job.id, "target", command.target_bytes)
+            draft_url = await self._storage.upload(job.id, "draft", draft_bytes)
+            result_url = await self._storage.upload(job.id, "result", result_gif_bytes)
+
+            # 12. Asset 저장 (Asset 도메인 서비스 호출)
+            source_gif_asset_id = self._asset_save.save(
+                AssetSaveCommand(user_id=command.user_id, category="KLIPY_GIF", url=command.gif_url)
+            )
+            target_asset_id = self._asset_save.save(
+                AssetSaveCommand(user_id=command.user_id, category="USER_UPLOAD", url=target_url)
+            )
+            draft_asset_id = self._asset_save.save(
+                AssetSaveCommand(user_id=command.user_id, category="COMPOSITION_DRAFT", url=draft_url)
+            )
+            result_asset_id = self._asset_save.save(
+                AssetSaveCommand(user_id=command.user_id, category="COMPOSITION_RESULT", url=result_url)
+            )
+
+            # 13. Job에 Asset 연결 + 완료 처리 + DB 저장
+            job.source_gif_asset_id = source_gif_asset_id
+            job.target_asset_id = target_asset_id
+            job.draft_asset_id = draft_asset_id
+            job.result_asset_id = result_asset_id
+            job.complete(result_url)
+            self._composition_repo.save(job)
+
+        except Exception as e:
+            self._credit.refund(command.user_id)
+            job.fail(str(e))
+            self._composition_repo.save(job)
+            raise
+
+        return RequestCompositionResult(composition_job_id=job.id, result_url=result_url)

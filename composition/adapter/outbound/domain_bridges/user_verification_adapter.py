@@ -1,4 +1,4 @@
-from composition.application.ports.outbound.user_verification_port import UserVerificationPort
+from composition.application.ports.outbound.domain_bridges.user_verification_port import UserVerificationPort
 from user.application.services.verify_user_service import VerifyUserService
 
 class UserVerificationAdapter(UserVerificationPort):

@@ -1,0 +1,2 @@
+# Lambda 런타임에 기본 포함된 것들만 사용 (boto3, json, os, subprocess, tempfile)
+# ffmpeg는 Lambda Layer로 제공
