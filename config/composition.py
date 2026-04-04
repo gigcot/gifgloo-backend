@@ -26,43 +26,43 @@ from composition.adapter.outbound.domain_bridges.credit_adapter import CreditAda
 from composition.adapter.outbound.domain_bridges.asset_save_adapter import AssetSaveAdapter
 from composition.adapter.outbound.persistence.sqlalchemy_composition_repository import SqlAlchemyCompositionRepository
 from composition.adapter.outbound.aws.lambda_feasibility_check_adapter import LambdaFeasibilityCheckAdapter
-from composition.adapter.outbound.aws.lambda_gif_processing_adapter import LambdaGifProcessingAdapter
 from composition.adapter.outbound.aws.r2_storage_adapter import R2StorageAdapter
-from composition.adapter.outbound.ai.lambda_composition_analysis_adapter import LambdaCompositionAnalysisAdapter
-from composition.adapter.outbound.ai.lambda_inpainting_adapter import LambdaInpaintingAdapter
+from composition.adapter.outbound.aws.lambda_pipeline_trigger_adapter import LambdaPipelineTriggerAdapter
 
 # --- Services ---
 from composition.application.services.request_composition_service import RequestCompositionService
 from composition.application.services.get_composition_status_service import GetCompositionStatusService
+from composition.application.services.pipeline_callback_service import PipelineCallbackService
+
+
+def _make_credit_adapter(db: Session) -> CreditAdapter:
+    user_repo = SqlAlchemyUserRepository(db)
+    verify_user_service = VerifyUserService(user_repo)
+    credit_repo = SqlAlchemyCreditAccountRepository(db)
+    return CreditAdapter(
+        check_balance_service=CheckBalanceSufficientService(credit_repo),
+        deduct_service=DeductCreditService(CreditUserVerificationAdapter(verify_user_service), credit_repo),
+        refund_service=RefundCreditService(credit_repo),
+    )
+
+
+def _make_asset_save_adapter(db: Session) -> AssetSaveAdapter:
+    user_repo = SqlAlchemyUserRepository(db)
+    verify_user_service = VerifyUserService(user_repo)
+    asset_repo = SqlAlchemyAssetRepository(db)
+    return AssetSaveAdapter(
+        SaveAssetService(AssetUserVerificationAdapter(verify_user_service), asset_repo, R2UploadAdapter())
+    )
 
 
 def get_request_composition_service(db: Session = Depends(get_db)) -> RequestCompositionService:
-    # 공통: User 검증 서비스
-    user_repo = SqlAlchemyUserRepository(db)
-    verify_user_service = VerifyUserService(user_repo)
-
-    # Credit 서비스들
-    credit_repo = SqlAlchemyCreditAccountRepository(db)
-    credit_user_verification = CreditUserVerificationAdapter(verify_user_service)
-    check_balance_service = CheckBalanceSufficientService(credit_repo)
-    deduct_service = DeductCreditService(credit_user_verification, credit_repo)
-    refund_service = RefundCreditService(credit_repo)
-
-    # Asset 저장 서비스
-    asset_repo = SqlAlchemyAssetRepository(db)
-    asset_user_verification = AssetUserVerificationAdapter(verify_user_service)
-    asset_storage = R2UploadAdapter()
-    save_asset_service = SaveAssetService(asset_user_verification, asset_repo, asset_storage)
-
     return RequestCompositionService(
-        user_verification=UserVerificationAdapter(verify_user_service),
-        credit=CreditAdapter(check_balance_service, deduct_service, refund_service),
+        user_verification=UserVerificationAdapter(VerifyUserService(SqlAlchemyUserRepository(db))),
+        credit=_make_credit_adapter(db),
         feasibility=LambdaFeasibilityCheckAdapter(),
-        gif_processor=LambdaGifProcessingAdapter(),
-        analysis=LambdaCompositionAnalysisAdapter(),
-        inpainting=LambdaInpaintingAdapter(),
         storage=R2StorageAdapter(),
-        asset_save=AssetSaveAdapter(save_asset_service),
+        asset_save=_make_asset_save_adapter(db),
+        pipeline_trigger=LambdaPipelineTriggerAdapter(),
         composition_repo=SqlAlchemyCompositionRepository(db),
     )
 
@@ -70,4 +70,13 @@ def get_request_composition_service(db: Session = Depends(get_db)) -> RequestCom
 def get_composition_status_service(db: Session = Depends(get_db)) -> GetCompositionStatusService:
     return GetCompositionStatusService(
         composition_repo=SqlAlchemyCompositionRepository(db),
+    )
+
+
+def get_pipeline_callback_service(db: Session = Depends(get_db)) -> PipelineCallbackService:
+    return PipelineCallbackService(
+        composition_repo=SqlAlchemyCompositionRepository(db),
+        asset_save=_make_asset_save_adapter(db),
+        storage=R2StorageAdapter(),
+        credit=_make_credit_adapter(db),
     )

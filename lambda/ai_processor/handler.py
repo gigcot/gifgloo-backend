@@ -1,15 +1,14 @@
 """
-AI 처리 Lambda 핸들러 — OpenAI 기반
+AI 처리 Lambda 핸들러 — 합성 파이프라인 전체 오케스트레이션
 
-액션:
-  analyze         : frame_keys + target_key → CompositionSpec JSON
-  generate_draft  : target_key + spec → draft_key에 PNG 저장
-  composite_frame : frame_key + draft_key + spec + frame_idx → output_key에 PNG 저장
+resume_from으로 특정 단계부터 재개 가능
 """
 import base64
 import io
 import json
 import os
+import urllib.request
+from concurrent.futures import ThreadPoolExecutor
 
 import boto3
 from openai import OpenAI
@@ -17,6 +16,11 @@ from openai import OpenAI
 BUCKET_NAME = os.environ.get("R2_BUCKET_NAME", "gifgloo")
 IMAGE_MODEL = "gpt-image-1.5"
 OUTPUT_SIZE = "1024x1024"
+MAX_FRAMES = 10
+GIF_PROCESSOR_FUNCTION = "gifgloo-gif-processor"
+
+EC2_INTERNAL_URL = os.environ.get("EC2_INTERNAL_URL", "")
+INTERNAL_SECRET = os.environ.get("INTERNAL_SECRET", "")
 
 SYSTEM_PROMPT_PATH = os.path.join(os.path.dirname(__file__), "prompts", "comp_order_prompt_ver7.txt")
 with open(SYSTEM_PROMPT_PATH) as f:
@@ -65,6 +69,8 @@ RESPONSE_FORMAT = {
     },
 }
 
+STAGE_ORDER = ["EXTRACTING_FRAMES", "ANALYZING", "GENERATING_DRAFT", "COMPOSITING", "BUILDING_GIF"]
+
 
 # ── R2 클라이언트 ─────────────────────────────────────────────
 
@@ -85,6 +91,76 @@ def _download(client, key: str) -> bytes:
 
 def _upload_png(client, key: str, data: bytes) -> None:
     client.put_object(Bucket=BUCKET_NAME, Key=key, Body=data, ContentType="image/png")
+
+
+# ── EC2 콜백 ──────────────────────────────────────────────────
+
+def _ec2_post(path: str, data: dict) -> None:
+    url = f"{EC2_INTERNAL_URL}/internal{path}"
+    body = json.dumps(data).encode()
+    req = urllib.request.Request(
+        url, data=body, method="POST",
+        headers={"Content-Type": "application/json", "X-Internal-Secret": INTERNAL_SECRET},
+    )
+    with urllib.request.urlopen(req, timeout=30) as resp:
+        resp.read()
+
+
+def _checkpoint(job_id: str, stage: str, **kwargs) -> None:
+    _ec2_post(f"/compositions/{job_id}/checkpoint", {"stage": stage, **kwargs})
+
+
+def _complete(job_id: str, draft_key: str, result_key: str) -> None:
+    _ec2_post(f"/compositions/{job_id}/complete", {"draft_key": draft_key, "result_key": result_key})
+
+
+def _fail(job_id: str, reason: str) -> None:
+    _ec2_post(f"/compositions/{job_id}/fail", {"reason": reason})
+
+
+# ── GIF 프로세서 Lambda 호출 ──────────────────────────────────
+
+def _invoke_gif_processor(payload: dict) -> dict:
+    client = boto3.client("lambda", region_name="ap-northeast-2")
+    response = client.invoke(
+        FunctionName=GIF_PROCESSOR_FUNCTION,
+        InvocationType="RequestResponse",
+        Payload=json.dumps(payload),
+    )
+    result = json.loads(response["Payload"].read())
+    if "errorMessage" in result:
+        raise RuntimeError(f"GIF 처리 Lambda 오류: {result['errorMessage']}")
+    return result
+
+
+# ── 키 패턴 ───────────────────────────────────────────────────
+
+def _target_key(job_id: str) -> str:
+    return f"compositions/{job_id}/TARGET.png"
+
+
+def _draft_key(job_id: str) -> str:
+    return f"compositions/{job_id}/DRAFT.png"
+
+
+def _result_key(job_id: str) -> str:
+    return f"compositions/{job_id}/RESULT.gif"
+
+
+def _frame_key(job_id: str, idx: int) -> str:
+    return f"temp/{job_id}/frame_{idx:04d}.png"
+
+
+def _composited_key(job_id: str, idx: int) -> str:
+    return f"temp/{job_id}/composited_{idx:04d}.png"
+
+
+# ── 재개 판단 ─────────────────────────────────────────────────
+
+def _should_run(stage: str, resume_from: str | None) -> bool:
+    if resume_from is None:
+        return True
+    return STAGE_ORDER.index(stage) >= STAGE_ORDER.index(resume_from)
 
 
 # ── 프롬프트 빌더 ─────────────────────────────────────────────
@@ -171,7 +247,7 @@ def _build_frame_prompt(spec: dict, frame_idx: int) -> str:
     return prompt
 
 
-# ── 액션 ──────────────────────────────────────────────────────
+# ── AI 액션 ───────────────────────────────────────────────────
 
 def analyze(frame_keys: list[str], target_key: str) -> dict:
     r2 = _r2_client()
@@ -217,21 +293,15 @@ def generate_draft(target_key: str, ref_frame_key: str | None, spec: dict, draft
         size=OUTPUT_SIZE,
         output_format="png",
     )
-    draft_bytes = base64.b64decode(response.data[0].b64_json)
-    _upload_png(r2, draft_key, draft_bytes)
-
-
-def _composited_frame_key(job_id: str, frame_idx: int) -> str:
-    return f"temp/{job_id}/composited_{frame_idx:04d}.png"
+    _upload_png(r2, draft_key, base64.b64decode(response.data[0].b64_json))
 
 
 def _composite_one(r2, openai_client, frame_key: str, draft_key: str, spec: dict, frame_idx: int, job_id: str) -> str:
-    output_key = _composited_frame_key(job_id, frame_idx)
+    output_key = _composited_key(job_id, frame_idx)
     prompt = _build_frame_prompt(spec, frame_idx)
-    draft_bytes = _download(r2, draft_key)
     images = [
         ("frame.png", io.BytesIO(_download(r2, frame_key)), "image/png"),
-        ("draft.png", io.BytesIO(draft_bytes), "image/png"),
+        ("draft.png", io.BytesIO(_download(r2, draft_key)), "image/png"),
     ]
     response = openai_client.images.edit(
         model=IMAGE_MODEL,
@@ -241,41 +311,80 @@ def _composite_one(r2, openai_client, frame_key: str, draft_key: str, spec: dict
         n=1,
         size=OUTPUT_SIZE,
     )
-    result_bytes = base64.b64decode(response.data[0].b64_json)
-    _upload_png(r2, output_key, result_bytes)
+    _upload_png(r2, output_key, base64.b64decode(response.data[0].b64_json))
     return output_key
 
 
 def composite_frames(job_id: str, frame_keys: list[str], draft_key: str, spec: dict) -> dict:
-    from concurrent.futures import ThreadPoolExecutor
-
     r2 = _r2_client()
     openai_client = OpenAI()
 
     with ThreadPoolExecutor(max_workers=len(frame_keys)) as executor:
         futures = [
-            executor.submit(_composite_one, r2, openai_client, frame_key, draft_key, spec, i, job_id)
-            for i, frame_key in enumerate(frame_keys)
+            executor.submit(_composite_one, r2, openai_client, fk, draft_key, spec, i, job_id)
+            for i, fk in enumerate(frame_keys)
         ]
         composited_keys = [f.result() for f in futures]
 
     return {"composited_keys": composited_keys}
 
 
+# ── 파이프라인 ────────────────────────────────────────────────
+
+def run_pipeline(event: dict) -> None:
+    job_id = event["job_id"]
+    gif_url = event["gif_url"]
+    resume_from = event.get("resume_from")
+    durations_ms = event.get("durations_ms")
+    spec_data = event.get("spec")
+
+    target_key = _target_key(job_id)
+    draft_key = _draft_key(job_id)
+    result_key = _result_key(job_id)
+
+    try:
+        if _should_run("EXTRACTING_FRAMES", resume_from):
+            _checkpoint(job_id, "EXTRACTING_FRAMES")
+            gif_result = _invoke_gif_processor({
+                "action": "extract_frames",
+                "gif_url": gif_url,
+                "max_frames": MAX_FRAMES,
+                "job_id": job_id,
+            })
+            durations_ms = gif_result["durations_ms"]
+
+        frame_keys = [_frame_key(job_id, i) for i in range(len(durations_ms))]
+
+        if _should_run("ANALYZING", resume_from):
+            _checkpoint(job_id, "ANALYZING", durations_ms=durations_ms)
+            spec_data = analyze(frame_keys, target_key)
+
+        if _should_run("GENERATING_DRAFT", resume_from):
+            _checkpoint(job_id, "GENERATING_DRAFT", spec=spec_data)
+            ref_frame_key = frame_keys[spec_data["draft_reference_frame"]] if spec_data.get("draft_reference_frame") is not None else None
+            generate_draft(target_key, ref_frame_key, spec_data, draft_key)
+
+        if _should_run("COMPOSITING", resume_from):
+            _checkpoint(job_id, "COMPOSITING")
+            composite_frames(job_id, frame_keys, draft_key, spec_data)
+
+        _checkpoint(job_id, "BUILDING_GIF")
+        composited_keys = [_composited_key(job_id, i) for i in range(len(durations_ms))]
+        _invoke_gif_processor({
+            "action": "build_gif",
+            "frames_r2_keys": composited_keys,
+            "durations_ms": durations_ms,
+            "output_key": result_key,
+        })
+
+        _complete(job_id, draft_key, result_key)
+
+    except Exception as e:
+        _fail(job_id, str(e))
+        raise
+
+
 # ── 핸들러 ────────────────────────────────────────────────────
 
 def handler(event, context):
-    action = event.get("action")
-
-    if action == "analyze":
-        return analyze(event["frame_keys"], event["target_key"])
-
-    elif action == "generate_draft":
-        generate_draft(event["target_key"], event.get("ref_frame_key"), event["spec"], event["draft_key"])
-        return {"ok": True}
-
-    elif action == "composite_frames":
-        return composite_frames(event["job_id"], event["frame_keys"], event["draft_key"], event["spec"])
-
-    else:
-        raise ValueError(f"알 수 없는 액션: {action}")
+    run_pipeline(event)

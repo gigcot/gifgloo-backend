@@ -1,7 +1,9 @@
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
+from typing import Optional
 
 from composition.domain.value_objects.composition_status import CompositionStatus
+from composition.domain.value_objects.composition_stage import CompositionStage
 
 
 @dataclass
@@ -14,9 +16,10 @@ class GetCompositionStatusQuery:
 class GetCompositionStatusResult:
     composition_job_id: str
     status: CompositionStatus
-    result_url: str | None
-    result_asset_id: str | None
-    failed_reason: str | None
+    stage: Optional[CompositionStage]
+    result_url: Optional[str]
+    result_asset_id: Optional[str]
+    failed_reason: Optional[str]
 
 
 class GetCompositionStatusPort(ABC):

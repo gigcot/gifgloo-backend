@@ -1,4 +1,3 @@
-import asyncio
 import json
 import os
 
@@ -66,7 +65,8 @@ def get_composition_status(
     )
     return {
         "composition_job_id": result.composition_job_id,
-        "status": result.status,
+        "status": result.status.value,
+        "stage": result.stage.value if result.stage else None,
         "result_url": result.result_url,
         "result_asset_id": result.result_asset_id,
         "failed_reason": result.failed_reason,
@@ -82,6 +82,7 @@ async def stream_composition_status(
     user_id = _get_user_id(request)
 
     async def event_generator():
+        import asyncio
         while True:
             if await request.is_disconnected():
                 break
@@ -90,7 +91,7 @@ async def stream_composition_status(
                     composition_job_id=composition_job_id,
                     user_id=user_id,
                 ))
-                yield f"data: {json.dumps({'status': result.status.value, 'result_url': result.result_url, 'result_asset_id': result.result_asset_id, 'failed_reason': result.failed_reason})}\n\n"
+                yield f"data: {json.dumps({'status': result.status.value, 'stage': result.stage.value if result.stage else None, 'result_url': result.result_url, 'result_asset_id': result.result_asset_id, 'failed_reason': result.failed_reason})}\n\n"
 
                 if result.status in (CompositionStatus.COMPLETED, CompositionStatus.FAILED):
                     break

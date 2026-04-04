@@ -21,6 +21,7 @@ class GetCompositionStatusService(GetCompositionStatusPort):
         return GetCompositionStatusResult(
             composition_job_id=job.id,
             status=job.status,
+            stage=job.stage,
             result_url=job.result_url,
             result_asset_id=job.result_asset_id,
             failed_reason=job.failed_reason,
