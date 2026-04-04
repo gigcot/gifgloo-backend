@@ -18,6 +18,9 @@ bin/
 .idea/
 .vscode/
 
+# Lambda 레이어 빌드 산출물
+lambda/layer/
+
 # 배포/패키징
 build/
 develop-eggs/
