@@ -5,16 +5,20 @@ from composition.application.ports.inbound.request_composition import (
     RequestCompositionCommand,
     RequestCompositionResult,
 )
+from composition.domain.value_objects.composition_policy import MAX_FRAMES
+from shared.exceptions import ConfirmationRequiredException
 from composition.application.ports.outbound.aws.feasibility_check_port import FeasibilityCheckPort, FeasibilityCheckCommand
 from composition.application.ports.outbound.aws.gif_processing_port import GifProcessingPort
 from composition.application.ports.outbound.ai.composition_analysis_port import CompositionAnalysisPort, CompositionAnalysisCommand
-from composition.application.ports.outbound.ai.image_inpainting_port import ImageInpaintingPort, DraftGenerationCommand, FrameCompositingCommand
-from composition.application.ports.outbound.aws.storage_port import StoragePort
+from composition.application.ports.outbound.ai.image_inpainting_port import ImageInpaintingPort, DraftGenerationCommand, FramesCompositingCommand
+from composition.application.ports.outbound.aws.storage_port import StoragePort, StorageCategory
 from composition.application.ports.outbound.domain_bridges.credit_port import CreditPort
 from composition.application.ports.outbound.domain_bridges.user_verification_port import UserVerificationPort
 from composition.application.ports.outbound.persistence.composition_repository import CompositionRepository
 from composition.application.ports.outbound.domain_bridges.asset_save_port import AssetSavePort, AssetSaveCommand
+from shared.asset_category import AssetCategory
 from composition.domain.aggregates.composition_job import CompositionJob
+from shared.exceptions import AuthorizationException, BusinessRuleException
 
 
 class RequestCompositionService(RequestCompositionPort):
@@ -40,109 +44,101 @@ class RequestCompositionService(RequestCompositionPort):
         self._asset_save = asset_save
         self._composition_repo = composition_repo
 
-    async def execute(self, command: RequestCompositionCommand) -> RequestCompositionResult:
-        # 1. 유저 검증
-        if not self._user_verification.is_active_user(command.user_id):
-            raise ValueError("유효하지 않은 유저입니다")
+    async def _save_input_assets(self, job_id: str, command: RequestCompositionCommand, target_key: str) -> tuple[str, str]:
+        source_gif_asset_id = self._asset_save.save(
+            AssetSaveCommand(user_id=command.user_id, category=AssetCategory.KLIPY_GIF, url=command.gif_url)
+        )
+        target_asset_id = self._asset_save.save(
+            AssetSaveCommand(user_id=command.user_id, category=AssetCategory.USER_UPLOAD, url=self._storage.public_url_for(target_key))
+        )
+        return source_gif_asset_id, target_asset_id
 
-        # 2. 잔액 확인
-        if not self._credit.has_enough_credit(command.user_id):
-            raise ValueError("크레딧이 부족합니다")
+    async def _run_pipeline(self, job: CompositionJob, command: RequestCompositionCommand) -> None:
+        target_key = await self._storage.upload(job.id, StorageCategory.TARGET, command.target_bytes)
 
-        # 3. Job 생성 + DB 저장
-        job = CompositionJob(user_id=command.user_id)
-        self._composition_repo.save(job)
+        input_asset_task = asyncio.create_task(self._save_input_assets(job.id, command, target_key))
 
         try:
-            # 4. Feasibility check (무료)
-            feasibility = self._feasibility.check(
-                FeasibilityCheckCommand(
-                    gif_bytes=command.gif_bytes,
-                    target_bytes=command.target_bytes,
-                )
-            )
-            if not feasibility.ok:
-                job.fail(feasibility.reason)
-                self._composition_repo.save(job)
-                raise ValueError(feasibility.reason)
-
-            # 5. 크레딧 차감 (여기서부터 비용 발생)
             self._credit.deduct(command.user_id)
-        except ValueError:
-            raise
         except Exception as e:
+            input_asset_task.cancel()
             job.fail(str(e))
             self._composition_repo.save(job)
-            raise
+            return
 
         try:
-            # 6. GIF 프레임 추출
-            gif_result = self._gif_processor.extract_frames(command.gif_bytes)
-            frames = [f.png_bytes for f in gif_result.frames]
-            durations = [f.duration_ms for f in gif_result.frames]
+            gif_result = await self._gif_processor.extract_frames(command.gif_url, MAX_FRAMES, job.id)
 
-            # 7. Composition Analysis (LLM)
             job.start_processing()
             spec = await self._analysis.analyze(
-                CompositionAnalysisCommand(frames=frames, target=command.target_bytes)
+                CompositionAnalysisCommand(frame_keys=gif_result.frame_keys, target_key=target_key)
             )
 
-            # 8. Draft 생성
-            draft_bytes = await self._inpainting.generate_draft(
+            ref_frame_key = gif_result.frame_keys[spec.draft_reference_frame] if spec.draft_reference_frame is not None else None
+            draft_key = self._storage.make_key(job.id, StorageCategory.DRAFT)
+            await self._inpainting.generate_draft(
                 DraftGenerationCommand(
-                    target=command.target_bytes,
+                    target_key=target_key,
                     spec=spec,
-                    frames=frames if spec.draft_reference_frame is not None else None,
+                    draft_key=draft_key,
+                    ref_frame_key=ref_frame_key,
                 )
             )
 
-            # 9. 프레임별 병렬 합성
-            async def composite_one(idx: int) -> bytes:
-                return await self._inpainting.composite_frame(
-                    FrameCompositingCommand(
-                        frame=frames[idx],
-                        draft=draft_bytes,
-                        spec=spec,
-                        frame_idx=idx,
-                    )
+            composited_keys = await self._inpainting.composite_frames(
+                FramesCompositingCommand(
+                    job_id=job.id,
+                    frame_keys=gif_result.frame_keys,
+                    draft_key=draft_key,
+                    spec=spec,
                 )
-
-            composited_frames = await asyncio.gather(*[composite_one(i) for i in range(len(frames))])
-
-            # 10. GIF 조합
-            result_gif_bytes = self._gif_processor.build_gif(list(composited_frames), durations)
-
-            # 11. R2 업로드 (target, draft, result)
-            target_url = await self._storage.upload(job.id, "target", command.target_bytes)
-            draft_url = await self._storage.upload(job.id, "draft", draft_bytes)
-            result_url = await self._storage.upload(job.id, "result", result_gif_bytes)
-
-            # 12. Asset 저장 (Asset 도메인 서비스 호출)
-            source_gif_asset_id = self._asset_save.save(
-                AssetSaveCommand(user_id=command.user_id, category="KLIPY_GIF", url=command.gif_url)
             )
-            target_asset_id = self._asset_save.save(
-                AssetSaveCommand(user_id=command.user_id, category="USER_UPLOAD", url=target_url)
+
+            result_key = self._storage.make_key(job.id, StorageCategory.RESULT)
+
+            (_, (source_gif_asset_id, target_asset_id)) = await asyncio.gather(
+                self._gif_processor.build_gif(list(composited_keys), gif_result.durations_ms, result_key),
+                input_asset_task,
             )
+
             draft_asset_id = self._asset_save.save(
-                AssetSaveCommand(user_id=command.user_id, category="COMPOSITION_DRAFT", url=draft_url)
+                AssetSaveCommand(user_id=command.user_id, category=AssetCategory.COMPOSITION_DRAFT, url=self._storage.public_url_for(draft_key))
             )
             result_asset_id = self._asset_save.save(
-                AssetSaveCommand(user_id=command.user_id, category="COMPOSITION_RESULT", url=result_url)
+                AssetSaveCommand(user_id=command.user_id, category=AssetCategory.COMPOSITION_RESULT, url=self._storage.public_url_for(result_key))
             )
 
-            # 13. Job에 Asset 연결 + 완료 처리 + DB 저장
-            job.source_gif_asset_id = source_gif_asset_id
-            job.target_asset_id = target_asset_id
-            job.draft_asset_id = draft_asset_id
-            job.result_asset_id = result_asset_id
-            job.complete(result_url)
+            job.complete(self._storage.public_url_for(result_key), source_gif_asset_id, target_asset_id, draft_asset_id, result_asset_id)
             self._composition_repo.save(job)
 
         except Exception as e:
+            if not input_asset_task.done():
+                input_asset_task.cancel()
             self._credit.refund(command.user_id)
             job.fail(str(e))
             self._composition_repo.save(job)
-            raise
 
-        return RequestCompositionResult(composition_job_id=job.id, result_url=result_url)
+    async def execute(self, command: RequestCompositionCommand) -> RequestCompositionResult:
+        if not self._user_verification.is_active_user(command.user_id):
+            raise AuthorizationException("유효하지 않은 유저입니다")
+
+        if not self._credit.has_enough_credit(command.user_id):
+            raise BusinessRuleException("크레딧이 부족합니다")
+
+        feasibility = await self._feasibility.check(FeasibilityCheckCommand(gif_url=command.gif_url))
+        if not feasibility.ok:
+            raise BusinessRuleException(feasibility.reason)
+
+        if feasibility.frame_count > MAX_FRAMES and not command.acknowledge_frame_reduction:
+            raise ConfirmationRequiredException(
+                message=f"GIF가 {feasibility.frame_count}프레임입니다. {MAX_FRAMES}프레임으로 줄여서 진행됩니다.",
+                code="FRAME_REDUCTION_REQUIRED",
+                proposal={"frame_count": feasibility.frame_count, "max_frames": MAX_FRAMES},
+            )
+
+        job = CompositionJob(user_id=command.user_id)
+        self._composition_repo.save(job)
+
+        asyncio.create_task(self._run_pipeline(job, command))
+
+        return RequestCompositionResult(composition_job_id=job.id)

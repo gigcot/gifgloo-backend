@@ -99,8 +99,8 @@ def _build_frame_prompt(spec: CompositionSpec, frame_idx: int, frame_dir_map: di
 
 
 class OpenAiInpaintingAdapter(ImageInpaintingPort):
-    def __init__(self, api_key: str):
-        self._client = AsyncOpenAI(api_key=api_key)
+    def __init__(self):
+        self._client = AsyncOpenAI()
         self._frame_dir_map: dict[int, dict] | None = None
 
     async def generate_draft(self, command: DraftGenerationCommand) -> bytes:

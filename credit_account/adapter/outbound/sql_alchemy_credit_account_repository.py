@@ -26,10 +26,10 @@ class SqlAlchemyCreditAccountRepository(CreditAccountRepositoryPort):
             ))
         self._session.commit()
 
-    def find_credit_by_user_id(self, user_id: str) -> CreditAccount:
+    def find_credit_by_user_id(self, user_id: str) -> CreditAccount | None:
         model = self._session.get(CreditAccountModel, user_id)
         if not model:
-            raise ValueError(f"크레딧 계정을 찾을 수 없습니다: {user_id}")
+            return None
         return CreditAccount(
             user_id=model.user_id,
             balance=model.balance,

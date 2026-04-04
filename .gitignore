@@ -40,3 +40,6 @@ wheels/
 cc_prompt/
 .claude/
 tests/
+
+##
+.DS_store

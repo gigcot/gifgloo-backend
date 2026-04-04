@@ -21,7 +21,7 @@ BUCKET_NAME = os.getenv("R2_BUCKET_NAME", "gifgloo")
 class R2UploadAdapter(StorageUploadPort):
     def execute(self, command: StorageUploadCommand) -> StorageUploadResult:
         client = _make_client()
-        key = f"{command.asset_type}/{command.asset_id}"
+        key = f"{command.asset_type.value}/{command.asset_id}"
         client.put_object(Bucket=BUCKET_NAME, Key=key, Body=command.image_data)
         url = f"{os.getenv('R2_PUBLIC_URL')}/{key}"
         return StorageUploadResult(storage_url=url)

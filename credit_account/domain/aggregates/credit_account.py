@@ -2,6 +2,7 @@ from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from credit_account.domain.value_objects.credit_policy import CreditPolicy
 from credit_account.domain.value_objects.transaction_type import TransactionType
+from shared.exceptions import BusinessRuleException
 import uuid
 
 
@@ -31,7 +32,7 @@ class CreditAccount:
 
     def deduct(self) -> None:
         if not self.has_enough():
-            raise ValueError("잔액이 충분하지 않습니다")
+            raise BusinessRuleException("잔액이 충분하지 않습니다")
         self.balance -= self.composition_cost
         self.transactions.append(CreditTransaction(
             amount=self.composition_cost,

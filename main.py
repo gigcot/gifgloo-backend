@@ -5,6 +5,7 @@ from dotenv import load_dotenv
 load_dotenv(".env")
 
 from config.database import engine, Base
+from shared.fastapi_error_handler import register_error_handlers
 import user.adapter.outbound.persistence.models  # noqa: F401
 import composition.adapter.outbound.persistence.models  # noqa: F401
 import asset.adapter.outbound.models  # noqa: F401
@@ -17,6 +18,7 @@ from user.adapter.inbound.fastapi.user_router import router as user_router
 Base.metadata.create_all(bind=engine)
 
 app = FastAPI()
+register_error_handlers(app)
 
 CORS_ORIGINS = os.getenv("CORS_ORIGINS", "").split(",")
 

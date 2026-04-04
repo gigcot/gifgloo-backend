@@ -3,6 +3,7 @@ from typing import Optional
 
 from payment.domain.value_objects.payment_status import PaymentStatus
 from payment.domain.value_objects.pg_type import PgType
+from shared.exceptions import InvalidStateException
 
 
 class Payment:
@@ -21,12 +22,12 @@ class Payment:
 
     def start(self):
         if self.status != PaymentStatus.PENDING:
-            raise ValueError("대기 중인 결제만 처리 시작할 수 있습니다")
+            raise InvalidStateException("대기 중인 결제만 처리 시작할 수 있습니다")
         self.status = PaymentStatus.PROCESSING
 
     def complete(self):
         if self.status != PaymentStatus.PROCESSING:
-            raise ValueError("처리 중인 결제만 완료할 수 있습니다")
+            raise InvalidStateException("처리 중인 결제만 완료할 수 있습니다")
         self.status = PaymentStatus.COMPLETED
     
     def fail(self, failed_reason):

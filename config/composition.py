@@ -10,7 +10,7 @@ from user.application.services.verify_user_service import VerifyUserService
 # --- Credit domain ---
 from credit_account.adapter.outbound.sql_alchemy_credit_account_repository import SqlAlchemyCreditAccountRepository
 from credit_account.adapter.outbound.user_verification import UserVerificationAdapter as CreditUserVerificationAdapter
-from credit_account.application.services.get_credit_balance_service import GetCreditBalanceService
+from credit_account.application.services.check_balance_sufficient_service import CheckBalanceSufficientService
 from credit_account.application.services.deduct_credit_service import DeductCreditService
 from credit_account.application.services.refund_credit_service import RefundCreditService
 
@@ -28,8 +28,8 @@ from composition.adapter.outbound.persistence.sqlalchemy_composition_repository 
 from composition.adapter.outbound.aws.lambda_feasibility_check_adapter import LambdaFeasibilityCheckAdapter
 from composition.adapter.outbound.aws.lambda_gif_processing_adapter import LambdaGifProcessingAdapter
 from composition.adapter.outbound.aws.r2_storage_adapter import R2StorageAdapter
-from composition.adapter.outbound.ai.openai_composition_analysis_adapter import OpenAiCompositionAnalysisAdapter
-from composition.adapter.outbound.ai.openai_inpainting_adapter import OpenAiInpaintingAdapter
+from composition.adapter.outbound.ai.lambda_composition_analysis_adapter import LambdaCompositionAnalysisAdapter
+from composition.adapter.outbound.ai.lambda_inpainting_adapter import LambdaInpaintingAdapter
 
 # --- Services ---
 from composition.application.services.request_composition_service import RequestCompositionService
@@ -44,7 +44,7 @@ def get_request_composition_service(db: Session = Depends(get_db)) -> RequestCom
     # Credit 서비스들
     credit_repo = SqlAlchemyCreditAccountRepository(db)
     credit_user_verification = CreditUserVerificationAdapter(verify_user_service)
-    get_balance_service = GetCreditBalanceService(credit_user_verification, credit_repo)
+    check_balance_service = CheckBalanceSufficientService(credit_repo)
     deduct_service = DeductCreditService(credit_user_verification, credit_repo)
     refund_service = RefundCreditService(credit_repo)
 
@@ -56,11 +56,11 @@ def get_request_composition_service(db: Session = Depends(get_db)) -> RequestCom
 
     return RequestCompositionService(
         user_verification=UserVerificationAdapter(verify_user_service),
-        credit=CreditAdapter(get_balance_service, deduct_service, refund_service),
+        credit=CreditAdapter(check_balance_service, deduct_service, refund_service),
         feasibility=LambdaFeasibilityCheckAdapter(),
         gif_processor=LambdaGifProcessingAdapter(),
-        analysis=OpenAiCompositionAnalysisAdapter(),
-        inpainting=OpenAiInpaintingAdapter(),
+        analysis=LambdaCompositionAnalysisAdapter(),
+        inpainting=LambdaInpaintingAdapter(),
         storage=R2StorageAdapter(),
         asset_save=AssetSaveAdapter(save_asset_service),
         composition_repo=SqlAlchemyCompositionRepository(db),

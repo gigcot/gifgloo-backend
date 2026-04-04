@@ -2,6 +2,7 @@ from asset.application.ports.inbound.get_asset_url import GetAssetUrlCommand, Ge
 from asset.application.ports.outbound.persistence.asset_repository import AssetRepositoryPort
 from asset.application.ports.outbound.user_verification_port import UserVerificationPort
 from asset.domain.aggregates.asset import Asset
+from shared.exceptions import AuthorizationException, InvalidStateException
 
 
 class GetAssetUrlService(GetAssetUrlPort):
@@ -16,7 +17,7 @@ class GetAssetUrlService(GetAssetUrlPort):
     def execute(self, command: GetAssetUrlCommand) -> GetAssetUrlResult:
 
         if not self._user_verification.is_active_user(command.user_id):
-            raise ValueError("유효하지 않은 유저입니다")
+            raise AuthorizationException("유효하지 않은 유저입니다")
 
         asset = self._asset_repo.find_asset_by_id(command.asset_id)
 
@@ -25,6 +26,6 @@ class GetAssetUrlService(GetAssetUrlPort):
         if asset_obj.is_available_for_composition():
             return GetAssetUrlResult(asset_obj.storage_url.value)
         else:
-            raise ValueError("해당 이미지는 사용 불가한 상태입니다")
+            raise InvalidStateException("해당 이미지는 사용 불가한 상태입니다")
         
 

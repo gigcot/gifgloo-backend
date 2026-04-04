@@ -4,6 +4,7 @@ from payment.application.ports.outbound.payment_gateway.pay_by_pg import PayByPG
 from payment.application.ports.outbound.persistence.payment_repository_port import PaymentRepositoryPort
 from payment.application.ports.outbound.user_verification_port import UserVerificationPort
 from payment.domain.aggregates.payment import Payment, PaymentStatus
+from shared.exceptions import AuthorizationException
 
 class ExecutePaymentService(ExecutePaymentPort):
     def __init__(
@@ -20,7 +21,7 @@ class ExecutePaymentService(ExecutePaymentPort):
     
     def execute(self, command: ExecutePaymentCommand) -> ExecutePaymentResult:
         if not self._user_verification.is_active_user(command.user_id):
-            raise ValueError("유효하지 않은 유저입니다")
+            raise AuthorizationException("유효하지 않은 유저입니다")
         
         payment = Payment(command.user_id, command.pg_type, command.amount)
 

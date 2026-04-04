@@ -7,5 +7,5 @@ class CreditAccountRepositoryPort(ABC):
         pass
 
     @abstractmethod
-    def find_credit_by_user_id(self, user_id: str) -> CreditAccount:
+    def find_credit_by_user_id(self, user_id: str) -> CreditAccount | None:
         pass

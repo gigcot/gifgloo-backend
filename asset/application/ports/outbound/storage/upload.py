@@ -1,11 +1,13 @@
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 
+from asset.domain.aggregates.asset import AssetType
+
 
 @dataclass
 class StorageUploadCommand:
     asset_id: str
-    asset_type: str
+    asset_type: AssetType
     image_data: bytes
 
 

@@ -12,8 +12,8 @@ class CompositionSpec:
 
 @dataclass
 class CompositionAnalysisCommand:
-    frames: list[bytes]   # GIF 프레임 PNG bytes 목록
-    target: bytes         # 타겟 이미지 PNG bytes
+    frame_keys: list[str]   # R2에 저장된 GIF 프레임 key 목록
+    target_key: str         # R2에 저장된 타겟 이미지 key
 
 
 class CompositionAnalysisPort(ABC):

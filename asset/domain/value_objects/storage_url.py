@@ -1,6 +1,7 @@
 from dataclasses import dataclass
 
 from urllib.parse import urlparse
+from shared.exceptions import ValidationException
 
 
 
@@ -15,4 +16,4 @@ class StorageUrl:
     def _validate_url(self, url: str) -> None:
         result = urlparse(url)
         if not all([result.scheme, result.netloc]):
-            raise ValueError("Invalid URL")
+            raise ValidationException("유효하지 않은 URL입니다")

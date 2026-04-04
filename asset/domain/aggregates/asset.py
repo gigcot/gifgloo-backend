@@ -1,5 +1,6 @@
 from enum import Enum
 from asset.domain.value_objects.storage_url import StorageUrl
+from shared.exceptions import AuthorizationException, InvalidStateException
 
 class AssetStatus(Enum):
     ACTIVE = "ACTIVE"
@@ -23,11 +24,11 @@ class Asset:
         self.status = AssetStatus.ACTIVE
         self.storage_url = storage_url
     
-    def delete(self, user_id: str) -> ...:
+    def delete(self, user_id: str) -> None:
         if user_id != self.user_id:
-            raise PermissionError("자신의 자산만 삭제할 수 있습니다")
+            raise AuthorizationException("자신의 자산만 삭제할 수 있습니다")
         if self.status != AssetStatus.ACTIVE:
-            raise ValueError("이미 삭제된 자산입니다")
+            raise InvalidStateException("이미 삭제된 자산입니다")
         self.status = AssetStatus.DELETED
     
     def is_available_for_composition(self) -> bool:

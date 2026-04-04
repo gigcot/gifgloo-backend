@@ -4,21 +4,23 @@ from sqlalchemy.orm import Session
 
 from asset.adapter.outbound.models import AssetModel
 from asset.application.ports.outbound.persistence.asset_repository import AssetRepositoryPort
-from asset.application.dto import AssetCategory, AssetDto, AssetResult
+from shared.asset_category import AssetCategory
+from asset.application.dto import AssetDto, AssetResult
+from asset.domain.aggregates.asset import AssetStatus, AssetType
 
 
 class SqlAlchemyAssetRepository(AssetRepositoryPort):
     def __init__(self, session: Session):
         self._session = session
 
-    def save(self, user_id: str, asset_id: str, asset_type: str, category: AssetCategory, storage_url: Optional[str], status: str) -> None:
+    def save(self, user_id: str, asset_id: str, asset_type: AssetType, category: AssetCategory, storage_url: Optional[str], status: AssetStatus) -> None:
         self._session.add(AssetModel(
             id=asset_id,
             user_id=user_id,
-            asset_type=asset_type,
+            asset_type=asset_type.value,
             category=category.value,
             storage_url=storage_url,
-            status=status,
+            status=status.value,
         ))
         self._session.commit()
 
@@ -37,7 +39,7 @@ class SqlAlchemyAssetRepository(AssetRepositoryPort):
         return [
             AssetDto(
                 asset_id=m.id,
-                asset_type=m.asset_type,
+                asset_type=AssetType(m.asset_type),
                 category=AssetCategory(m.category),
                 url=m.storage_url or "",
             )
@@ -57,12 +59,12 @@ class SqlAlchemyAssetRepository(AssetRepositoryPort):
         return AssetResult(
             id=model.id,
             user_id=model.user_id,
-            asset_type=model.asset_type,
+            asset_type=AssetType(model.asset_type),
             storage_url=model.storage_url or "",
         )
 
-    def update_status(self, asset_id: str, status: str) -> None:
+    def update_status(self, asset_id: str, status: AssetStatus) -> None:
         model = self._session.get(AssetModel, asset_id)
         if model:
-            model.status = status
+            model.status = status.value
             self._session.commit()

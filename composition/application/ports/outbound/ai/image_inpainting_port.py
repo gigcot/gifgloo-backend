@@ -6,24 +6,27 @@ from composition.application.ports.outbound.ai.composition_analysis_port import 
 
 @dataclass
 class DraftGenerationCommand:
-    target: bytes                  # 타겟 이미지 PNG bytes
+    target_key: str                # R2 타겟 이미지 key
     spec: CompositionSpec
-    frames: list[bytes] | None = None  # mix 타입일 때만 — draft_reference_frame 참조용
+    draft_key: str                 # 저장할 R2 key (서비스가 make_key로 생성해서 전달)
+    ref_frame_key: str | None = None  # mix 타입일 때만 — draft_reference_frame 참조용
 
 
 @dataclass
-class FrameCompositingCommand:
-    frame: bytes          # 베이스 GIF 프레임 PNG bytes
-    draft: bytes          # STEP 2에서 생성된 초안 PNG bytes
+class FramesCompositingCommand:
+    job_id: str
+    frame_keys: list[str]   # R2 베이스 프레임 key 목록 (전체)
+    draft_key: str          # R2 드래프트 key
     spec: CompositionSpec
-    frame_idx: int
 
 
 class ImageInpaintingPort(ABC):
     @abstractmethod
-    async def generate_draft(self, command: DraftGenerationCommand) -> bytes:
+    async def generate_draft(self, command: DraftGenerationCommand) -> str:
+        """드래프트를 생성해 draft_key에 R2 저장, draft_key 반환"""
         pass
 
     @abstractmethod
-    async def composite_frame(self, command: FrameCompositingCommand) -> bytes:
+    async def composite_frames(self, command: FramesCompositingCommand) -> list[str]:
+        """Lambda 내부에서 병렬 합성, composited frame R2 key 목록 반환"""
         pass

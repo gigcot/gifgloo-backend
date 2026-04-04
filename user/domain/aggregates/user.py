@@ -7,6 +7,7 @@ import uuid
 
 from user.domain.value_objects.email import Email
 from user.domain.value_objects.social_account import SocialAccount
+from shared.exceptions import InvalidStateException
 
 
 class UserRole(Enum):
@@ -35,7 +36,7 @@ class User:
 
     def deactivate(self) -> None:
         if self.status == UserStatus.INACTIVE:
-            raise ValueError("이미 탈퇴한 유저입니다")
+            raise InvalidStateException("이미 탈퇴한 유저입니다")
         self.status = UserStatus.INACTIVE
 
     def change_role(self, role: UserRole) -> None:

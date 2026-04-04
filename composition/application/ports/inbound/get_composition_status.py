@@ -14,6 +14,7 @@ class GetCompositionStatusQuery:
 class GetCompositionStatusResult:
     composition_job_id: str
     status: CompositionStatus
+    result_url: str | None
     result_asset_id: str | None
     failed_reason: str | None
 

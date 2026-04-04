@@ -57,8 +57,8 @@ RESPONSE_FORMAT = {
 
 
 class OpenAiCompositionAnalysisAdapter(CompositionAnalysisPort):
-    def __init__(self, api_key: str):
-        self._client = AsyncOpenAI(api_key=api_key)
+    def __init__(self):
+        self._client = AsyncOpenAI()
 
     async def analyze(self, command: CompositionAnalysisCommand) -> CompositionSpec:
         content = []
@@ -72,7 +72,7 @@ class OpenAiCompositionAnalysisAdapter(CompositionAnalysisPort):
         content.append({"type": "image_url", "image_url": {"url": f"data:image/png;base64,{b64_target}"}})
 
         response = await self._client.chat.completions.create(
-            model="gpt-5.1-mini",
+            model="gpt-5-mini",
             messages=[
                 {"role": "system", "content": SYSTEM_PROMPT},
                 {"role": "user", "content": content},

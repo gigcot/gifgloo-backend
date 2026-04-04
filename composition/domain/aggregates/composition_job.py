@@ -5,6 +5,7 @@ from typing import Optional
 import uuid
 
 from composition.domain.value_objects.composition_status import CompositionStatus
+from shared.exceptions import InvalidStateException
 
 
 class CompositionJob:
@@ -22,14 +23,25 @@ class CompositionJob:
 
     def start_processing(self) -> None:
         if self.status != CompositionStatus.PENDING:
-            raise ValueError("대기 중인 작업만 처리 시작할 수 있습니다")
+            raise InvalidStateException("대기 중인 작업만 처리 시작할 수 있습니다")
         self.status = CompositionStatus.PROCESSING
 
-    def complete(self, result_url: str) -> None:
+    def complete(
+        self,
+        result_url: str,
+        source_gif_asset_id: str,
+        target_asset_id: str,
+        draft_asset_id: str,
+        result_asset_id: str,
+    ) -> None:
         if self.status != CompositionStatus.PROCESSING:
-            raise ValueError("처리 중인 작업만 완료할 수 있습니다")
+            raise InvalidStateException("처리 중인 작업만 완료할 수 있습니다")
         self.status = CompositionStatus.COMPLETED
         self.result_url = result_url
+        self.source_gif_asset_id = source_gif_asset_id
+        self.target_asset_id = target_asset_id
+        self.draft_asset_id = draft_asset_id
+        self.result_asset_id = result_asset_id
 
     def fail(self, reason: str) -> None:
         self.status = CompositionStatus.FAILED

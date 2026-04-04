@@ -4,17 +4,17 @@ from dataclasses import dataclass
 
 @dataclass
 class FeasibilityCheckCommand:
-    gif_bytes: bytes
-    target_bytes: bytes
+    gif_url: str
 
 
 @dataclass
 class FeasibilityCheckResult:
     ok: bool
+    frame_count: int = 0
     reason: str | None = None  # ok=False일 때 사유
 
 
 class FeasibilityCheckPort(ABC):
     @abstractmethod
-    def check(self, command: FeasibilityCheckCommand) -> FeasibilityCheckResult:
+    async def check(self, command: FeasibilityCheckCommand) -> FeasibilityCheckResult:
         pass
