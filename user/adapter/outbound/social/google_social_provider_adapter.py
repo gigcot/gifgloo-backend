@@ -7,7 +7,7 @@ import os
 load_dotenv(".env")
 GOOGLE_CLIENT_ID = os.getenv("GOOGLE_RESTAPI_KEY")
 GOOGLE_CLIENT_SECRET = os.getenv("GOOGLE_CLIENT_SECRET")
-GOOGLE_REDIRECT_URI = "http://localhost:8000/oauth/google/callback"
+GOOGLE_REDIRECT_URI = os.getenv("GOOGLE_REDIRECT_URI")
 
 
 class GoogleSocialProviderAdapter(SocialProviderPort):

@@ -8,7 +8,7 @@ load_dotenv(".env")
 
 KAKAO_CLIENT_ID = os.getenv("KAKAO_RESTAPI_KEY")
 KAKAO_CLIENT_SECRET = "TODO"
-KAKAO_REDIRECT_URI = "http://localhost:8000/oauth/kakao/callback"
+KAKAO_REDIRECT_URI = os.getenv("KAKAO_REDIRECT_URI")
 
 
 class KakaoSocialProviderAdapter(SocialProviderPort):

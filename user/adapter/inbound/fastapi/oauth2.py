@@ -15,12 +15,12 @@ load_dotenv(".env")
 router = APIRouter(prefix="/oauth", tags=["oauth"])
 
 KAKAO_CLIENT_ID = os.getenv("KAKAO_RESTAPI_KEY")
-KAKAO_REDIRECT_URI = "http://localhost:8000/oauth/kakao/callback"
+KAKAO_REDIRECT_URI = os.getenv("KAKAO_REDIRECT_URI")
 
 GOOGLE_CLIENT_ID = os.getenv("GOOGLE_RESTAPI_KEY")
-GOOGLE_REDIRECT_URI = "http://localhost:8000/oauth/google/callback"
+GOOGLE_REDIRECT_URI = os.getenv("GOOGLE_REDIRECT_URI")
 
-FRONTEND_CALLBACK_URL = "http://localhost:3000/callback"
+FRONTEND_CALLBACK_URL = os.getenv("FRONTEND_CALLBACK_URL")
 SECRET_KEY = os.getenv("JWT_SECRET_KEY")
 
 
@@ -36,7 +36,7 @@ def _redirect_with_cookie(user_id: str) -> RedirectResponse:
         value=token,
         httponly=True,
         samesite="lax",
-        secure=False,
+        secure=os.getenv("COOKIE_SECURE", "false").lower() == "true",
     )
     return response
 
