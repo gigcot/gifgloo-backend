@@ -1,4 +1,7 @@
-from fastapi import APIRouter, Depends
+import os
+
+import jwt
+from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel
 
 from credit_account.application.ports.inbound.charge import ChargeCreditCommand
@@ -9,36 +12,35 @@ from credit_account.application.services.charge_credit_service import ChargeCred
 from credit_account.application.services.deduct_credit_service import DeductCreditService
 from credit_account.application.services.get_credit_balance_service import GetCreditBalanceService
 from credit_account.application.services.get_credit_history_service import GetCreditHistoryService
+from config.credit import get_credit_balance_service
 
-router = APIRouter(prefix="/credit_account", tags=["credit_account"])
+router = APIRouter(prefix="/credits", tags=["credits"])
 
-SECRET_KEY = "TODO: config에서 주입"  # TODO: config로 분리
+SECRET_KEY = os.getenv("JWT_SECRET_KEY")
 
-@router.post("/charge")
-def charge_credit(
-    amount: int,
-    user_id: str = "",  # TODO: JWT에서 추출,
-    service: ChargeCreditService = Depends(),
-):
-    service.execute(ChargeCreditCommand(user_id, amount))
 
-@router.post("/deduct")
-def deduct_credit(
-    service: DeductCreditService = Depends(),
-    user_id: str = "",  # TODO: JWT에서 추출,
-):  
-    service.execute(DeductCreditCommand(user_id))
+def _get_user_id(request: Request) -> str:
+    token = request.cookies.get("user_token")
+    if not token:
+        raise HTTPException(401, "인증이 필요합니다")
+    try:
+        payload = jwt.decode(token, SECRET_KEY, algorithms=["HS256"])
+        return payload["user_id"]
+    except Exception:
+        raise HTTPException(401, "유효하지 않은 토큰입니다")
 
-@router.get("/get_balance")
+# TODO: charge, deduct — DI 연결 후 활성화
+# @router.post("/charge")
+# @router.post("/deduct")
+
+@router.get("/balance")
 def get_credit_balance(
-    user_id: str = "",  # TODO: JWT에서 추출,
-    service: GetCreditBalanceService = Depends()
+    request: Request,
+    service: GetCreditBalanceService = Depends(get_credit_balance_service),
 ):
-    return service.execute(GetCreditBalanceCommand(user_id))
+    user_id = _get_user_id(request)
+    result = service.execute(GetCreditBalanceCommand(user_id))
+    return {"balance": result.balance}
 
-@router.get("/get_history")
-def get_credit_history(
-    user_id: str = "",  # TODO: JWT에서 추출,
-    service: GetCreditHistoryService = Depends(),
-):
-    return service.execute(GetCreditHistoryCommand(user_id))
+# TODO: get_history — DI 연결 후 활성화
+# @router.get("/history")

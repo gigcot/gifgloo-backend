@@ -17,7 +17,7 @@ class AssetRepositoryPort(ABC):
         pass
 
     @abstractmethod
-    def get_asset_list(self, user_id: str) -> list[AssetDto]:
+    def get_asset_list(self, user_id: str, category: Optional[AssetCategory] = None) -> list[AssetDto]:
         pass
 
     @abstractmethod

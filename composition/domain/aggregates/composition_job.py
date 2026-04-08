@@ -16,6 +16,8 @@ class CompositionJob:
         self.status: CompositionStatus = CompositionStatus.PENDING
         self.stage: Optional[CompositionStage] = None
         self.gif_url: Optional[str] = None
+        self.source_gif_url: Optional[str] = None
+        self.target_url: Optional[str] = None
         self.source_gif_asset_id: Optional[str] = None
         self.target_asset_id: Optional[str] = None
         self.draft_asset_id: Optional[str] = None

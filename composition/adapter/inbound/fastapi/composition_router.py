@@ -7,10 +7,11 @@ from fastapi.responses import StreamingResponse
 
 from composition.application.ports.inbound.get_composition_status import GetCompositionStatusQuery
 from composition.application.ports.inbound.request_composition import RequestCompositionCommand
+from composition.application.services.get_composition_list_service import GetCompositionListService
 from composition.application.services.get_composition_status_service import GetCompositionStatusService
 from composition.application.services.request_composition_service import RequestCompositionService
 from composition.domain.value_objects.composition_status import CompositionStatus
-from config.composition import get_request_composition_service, get_composition_status_service
+from config.composition import get_request_composition_service, get_composition_status_service, get_composition_list_service
 
 router = APIRouter(prefix="/compositions", tags=["composition"])
 
@@ -26,6 +27,28 @@ def _get_user_id(request: Request) -> str:
         return payload["user_id"]
     except Exception:
         raise HTTPException(401, "유효하지 않은 토큰입니다")
+
+
+@router.get("")
+def get_composition_list(
+    request: Request,
+    service: GetCompositionListService = Depends(get_composition_list_service),
+):
+    user_id = _get_user_id(request)
+    jobs = service.execute(user_id)
+    return {
+        "jobs": [
+            {
+                "job_id": j.job_id,
+                "status": j.status.value,
+                "source_gif_url": j.source_gif_url,
+                "target_url": j.target_url,
+                "result_url": j.result_url,
+                "created_at": j.created_at,
+            }
+            for j in jobs
+        ]
+    }
 
 
 @router.post("")

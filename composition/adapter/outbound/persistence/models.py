@@ -11,6 +11,8 @@ class CompositionJobModel(Base):
     status = Column(String, nullable=False)
     stage = Column(String, nullable=True)
     gif_url = Column(String, nullable=True)
+    source_gif_url = Column(String, nullable=True)
+    target_url = Column(String, nullable=True)
     source_gif_asset_id = Column(String, nullable=True)
     target_asset_id = Column(String, nullable=True)
     draft_asset_id = Column(String, nullable=True)

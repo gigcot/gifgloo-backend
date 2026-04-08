@@ -30,12 +30,13 @@ class SqlAlchemyAssetRepository(AssetRepositoryPort):
             model.status = "DELETED"
             self._session.commit()
 
-    def get_asset_list(self, user_id: str) -> list[AssetDto]:
-        models = (
-            self._session.query(AssetModel)
-            .filter(AssetModel.user_id == user_id, AssetModel.status != "DELETED")
-            .all()
+    def get_asset_list(self, user_id: str, category: Optional[AssetCategory] = None) -> list[AssetDto]:
+        q = self._session.query(AssetModel).filter(
+            AssetModel.user_id == user_id, AssetModel.status != "DELETED"
         )
+        if category:
+            q = q.filter(AssetModel.category == category.value)
+        models = q.all()
         return [
             AssetDto(
                 asset_id=m.id,

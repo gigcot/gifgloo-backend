@@ -32,6 +32,7 @@ from composition.adapter.outbound.aws.lambda_pipeline_trigger_adapter import Lam
 # --- Services ---
 from composition.application.services.request_composition_service import RequestCompositionService
 from composition.application.services.get_composition_status_service import GetCompositionStatusService
+from composition.application.services.get_composition_list_service import GetCompositionListService
 from composition.application.services.pipeline_callback_service import PipelineCallbackService
 
 
@@ -69,6 +70,12 @@ def get_request_composition_service(db: Session = Depends(get_db)) -> RequestCom
 
 def get_composition_status_service(db: Session = Depends(get_db)) -> GetCompositionStatusService:
     return GetCompositionStatusService(
+        composition_repo=SqlAlchemyCompositionRepository(db),
+    )
+
+
+def get_composition_list_service(db: Session = Depends(get_db)) -> GetCompositionListService:
+    return GetCompositionListService(
         composition_repo=SqlAlchemyCompositionRepository(db),
     )
 

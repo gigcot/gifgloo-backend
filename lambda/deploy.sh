@@ -55,10 +55,19 @@ deploy_layer() {
         exit 1
     fi
 
+    if [ -z "$LAMBDA_LAYER_BUCKET" ]; then
+        echo "❌ LAMBDA_LAYER_BUCKET 환경변수 필요 (Layer zip 업로드용 S3 버킷)"
+        exit 1
+    fi
+
+    S3_KEY="lambda-layers/ffmpeg-layer.zip"
+    echo "▶ S3 업로드 중: s3://$LAMBDA_LAYER_BUCKET/$S3_KEY"
+    aws s3 cp "$LAYER_ZIP" "s3://$LAMBDA_LAYER_BUCKET/$S3_KEY" --region "$AWS_REGION"
+
     LAYER_ARN=$(aws lambda publish-layer-version \
         --layer-name "$LAYER_NAME" \
         --description "ffmpeg static binary for GIF processing" \
-        --zip-file "fileb://$LAYER_ZIP" \
+        --content "S3Bucket=$LAMBDA_LAYER_BUCKET,S3Key=$S3_KEY" \
         --compatible-runtimes python3.12 \
         --compatible-architectures x86_64 \
         --region "$AWS_REGION" \
@@ -98,12 +107,18 @@ deploy_gif_function() {
 
 deploy_ai_function() {
     echo "▶ ai_processor 패키징 중..."
-    cd "$AI_FUNCTION_DIR"
-    # openai 패키지를 함께 패키징
-    pip install openai -t ./packages --quiet
-    zip -r "$AI_FUNCTION_ZIP" handler.py prompts/ packages/
-    rm -rf ./packages
-    cd -
+    mkdir -p /tmp/ai_build
+    cp "$AI_FUNCTION_DIR/handler.py" /tmp/ai_build/
+    cp -r "$AI_FUNCTION_DIR/prompts/" /tmp/ai_build/prompts/
+    pip install openai \
+        -t /tmp/ai_build \
+        --quiet \
+        --platform manylinux2014_x86_64 \
+        --only-binary=:all: \
+        --python-version 3.12 \
+        --implementation cp
+    cd /tmp/ai_build && zip -r "$AI_FUNCTION_ZIP" . && cd -
+    rm -rf /tmp/ai_build
 
     _deploy_function \
         "$AI_FUNCTION_NAME" \
@@ -111,7 +126,7 @@ deploy_ai_function() {
         "$AI_MEMORY" \
         "$AI_TIMEOUT" \
         "" \
-        "R2_ENDPOINT_URL=$R2_ENDPOINT_URL,R2_ACCESS_KEY_ID=$R2_ACCESS_KEY_ID,R2_SECRET_ACCESS_KEY=$R2_SECRET_ACCESS_KEY,R2_BUCKET_NAME=$R2_BUCKET_NAME,OPENAI_API_KEY=$OPENAI_API_KEY"
+        "R2_ENDPOINT_URL=$R2_ENDPOINT_URL,R2_ACCESS_KEY_ID=$R2_ACCESS_KEY_ID,R2_SECRET_ACCESS_KEY=$R2_SECRET_ACCESS_KEY,R2_BUCKET_NAME=$R2_BUCKET_NAME,OPENAI_API_KEY=$OPENAI_API_KEY,EC2_INTERNAL_URL=$EC2_INTERNAL_URL,INTERNAL_SECRET=$INTERNAL_SECRET"
 
     echo "✓ ai_processor 배포 완료"
 }

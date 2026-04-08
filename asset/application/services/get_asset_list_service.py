@@ -18,6 +18,6 @@ class GetAssetListlService(GetAssetListPort):
         if not self._user_verification.is_active_user(command.user_id):
             raise AuthorizationException("유효하지 않은 유저입니다")
 
-        asset_list = self._asset_repo.get_asset_list(command.user_id)
+        asset_list = self._asset_repo.get_asset_list(command.user_id, command.category)
 
         return GetAssetListResult(asset_list)

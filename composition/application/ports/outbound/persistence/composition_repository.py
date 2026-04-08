@@ -17,3 +17,7 @@ class CompositionRepository(ABC):
     def find_all_processing(self) -> list[CompositionJob]:
         """status=PROCESSING이고 gif_url이 있는 job 목록 (재시작 복구용)"""
         pass
+
+    @abstractmethod
+    def find_all_by_user_id(self, user_id: str) -> list[CompositionJob]:
+        pass

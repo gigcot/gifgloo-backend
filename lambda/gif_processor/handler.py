@@ -42,7 +42,8 @@ def _extracted_frame_key(job_id: str, frame_idx: int) -> str:
 # ── HTTP 다운로드 ──────────────────────────────────────────────
 
 def _fetch_url(url: str) -> bytes:
-    with urllib.request.urlopen(url) as resp:
+    req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
+    with urllib.request.urlopen(req) as resp:
         return resp.read()
 
 

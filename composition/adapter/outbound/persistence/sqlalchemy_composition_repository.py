@@ -16,6 +16,8 @@ def _to_domain(model: CompositionJobModel) -> CompositionJob:
     job.status = CompositionStatus(model.status)
     job.stage = CompositionStage(model.stage) if model.stage else None
     job.gif_url = model.gif_url
+    job.source_gif_url = model.source_gif_url
+    job.target_url = model.target_url
     job.source_gif_asset_id = model.source_gif_asset_id
     job.target_asset_id = model.target_asset_id
     job.draft_asset_id = model.draft_asset_id
@@ -38,6 +40,8 @@ class SqlAlchemyCompositionRepository(CompositionRepository):
             existing.status = job.status.value
             existing.stage = job.stage.value if job.stage else None
             existing.gif_url = job.gif_url
+            existing.source_gif_url = job.source_gif_url
+            existing.target_url = job.target_url
             existing.source_gif_asset_id = job.source_gif_asset_id
             existing.target_asset_id = job.target_asset_id
             existing.draft_asset_id = job.draft_asset_id
@@ -53,6 +57,8 @@ class SqlAlchemyCompositionRepository(CompositionRepository):
                 status=job.status.value,
                 stage=job.stage.value if job.stage else None,
                 gif_url=job.gif_url,
+                source_gif_url=job.source_gif_url,
+                target_url=job.target_url,
                 source_gif_asset_id=job.source_gif_asset_id,
                 target_asset_id=job.target_asset_id,
                 draft_asset_id=job.draft_asset_id,
@@ -70,6 +76,15 @@ class SqlAlchemyCompositionRepository(CompositionRepository):
         if not model:
             return None
         return _to_domain(model)
+
+    def find_all_by_user_id(self, user_id: str) -> list[CompositionJob]:
+        models = (
+            self._session.query(CompositionJobModel)
+            .filter(CompositionJobModel.user_id == user_id)
+            .order_by(CompositionJobModel.created_at.desc())
+            .all()
+        )
+        return [_to_domain(m) for m in models]
 
     def find_all_processing(self) -> list[CompositionJob]:
         models = (

@@ -7,7 +7,7 @@ from composition.application.ports.outbound.aws.storage_port import StoragePort,
 _CATEGORY_CONFIG = {
     StorageCategory.TARGET: {"extension": "png", "content_type": "image/png"},
     StorageCategory.DRAFT: {"extension": "png", "content_type": "image/png"},
-    StorageCategory.RESULT: {"extension": "gif", "content_type": "image/gif"},
+    StorageCategory.RESULT: {"extension": "gif", "content_type": "image/gif", "content_disposition": "attachment"},
 }
 
 
@@ -35,10 +35,14 @@ class R2StorageAdapter(StoragePort):
     async def upload(self, job_id: str, category: StorageCategory, data: bytes) -> str:
         config = _CATEGORY_CONFIG[category]
         key = self.make_key(job_id, category)
+        extra = {}
+        if "content_disposition" in config:
+            extra["ContentDisposition"] = config["content_disposition"]
         _make_client().put_object(
             Bucket=BUCKET_NAME,
             Key=key,
             Body=data,
             ContentType=config["content_type"],
+            **extra,
         )
         return key

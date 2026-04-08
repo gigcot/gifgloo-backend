@@ -22,6 +22,8 @@ from composition.adapter.outbound.aws.lambda_pipeline_trigger_adapter import Lam
 from composition.application.ports.outbound.aws.pipeline_trigger_port import PipelineTriggerCommand
 from user.adapter.inbound.fastapi.oauth2 import router as oauth_router
 from user.adapter.inbound.fastapi.user_router import router as user_router
+from asset.adapter.inbound.fastapi.asset_router import router as asset_router
+from credit_account.adapter.inbound.fastapi.credit_account_router import router as credit_router
 
 is_shutting_down = False
 
@@ -43,6 +45,7 @@ async def _recover_processing_jobs() -> None:
             await trigger.trigger(PipelineTriggerCommand(
                 job_id=job.id,
                 gif_url=job.gif_url,
+                target_key=f"compositions/{job.id}/target.png",
                 user_id=job.user_id,
                 resume_from=job.stage.value if job.stage else None,
                 durations_ms=job.durations_ms,
@@ -85,3 +88,5 @@ app.include_router(composition_router)
 app.include_router(composition_internal_router)
 app.include_router(oauth_router)
 app.include_router(user_router)
+app.include_router(asset_router)
+app.include_router(credit_router)

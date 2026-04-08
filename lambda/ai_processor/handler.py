@@ -71,6 +71,8 @@ RESPONSE_FORMAT = {
 
 STAGE_ORDER = ["EXTRACTING_FRAMES", "ANALYZING", "GENERATING_DRAFT", "COMPOSITING", "BUILDING_GIF"]
 
+openai_client = OpenAI(max_retries=6)
+
 
 # ── R2 클라이언트 ─────────────────────────────────────────────
 
@@ -136,15 +138,15 @@ def _invoke_gif_processor(payload: dict) -> dict:
 # ── 키 패턴 ───────────────────────────────────────────────────
 
 def _target_key(job_id: str) -> str:
-    return f"compositions/{job_id}/TARGET.png"
+    return f"compositions/{job_id}/target.png"
 
 
 def _draft_key(job_id: str) -> str:
-    return f"compositions/{job_id}/DRAFT.png"
+    return f"compositions/{job_id}/draft.png"
 
 
 def _result_key(job_id: str) -> str:
-    return f"compositions/{job_id}/RESULT.gif"
+    return f"compositions/{job_id}/result.gif"
 
 
 def _frame_key(job_id: str, idx: int) -> str:
@@ -251,7 +253,7 @@ def _build_frame_prompt(spec: dict, frame_idx: int) -> str:
 
 def analyze(frame_keys: list[str], target_key: str) -> dict:
     r2 = _r2_client()
-    openai_client = OpenAI()
+
 
     content = []
     for i, key in enumerate(frame_keys):
@@ -276,7 +278,7 @@ def analyze(frame_keys: list[str], target_key: str) -> dict:
 
 def generate_draft(target_key: str, ref_frame_key: str | None, spec: dict, draft_key: str) -> None:
     r2 = _r2_client()
-    openai_client = OpenAI()
+
 
     prompt = _build_draft_prompt(spec)
     images = []
@@ -317,7 +319,7 @@ def _composite_one(r2, openai_client, frame_key: str, draft_key: str, spec: dict
 
 def composite_frames(job_id: str, frame_keys: list[str], draft_key: str, spec: dict) -> dict:
     r2 = _r2_client()
-    openai_client = OpenAI()
+
 
     with ThreadPoolExecutor(max_workers=len(frame_keys)) as executor:
         futures = [

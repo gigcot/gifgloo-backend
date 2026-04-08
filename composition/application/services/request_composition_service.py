@@ -58,11 +58,15 @@ class RequestCompositionService(RequestCompositionPort):
 
         target_key = await self._storage.upload(job.id, StorageCategory.TARGET, command.target_bytes)
 
+        target_url = self._storage.public_url_for(target_key)
+
+        job.source_gif_url = command.gif_url
+        job.target_url = target_url
         job.source_gif_asset_id = self._asset_save.save(
             AssetSaveCommand(user_id=command.user_id, category=AssetCategory.KLIPY_GIF, url=command.gif_url)
         )
         job.target_asset_id = self._asset_save.save(
-            AssetSaveCommand(user_id=command.user_id, category=AssetCategory.USER_UPLOAD, url=self._storage.public_url_for(target_key))
+            AssetSaveCommand(user_id=command.user_id, category=AssetCategory.USER_UPLOAD, url=target_url)
         )
 
         job.start_processing()
@@ -80,6 +84,7 @@ class RequestCompositionService(RequestCompositionPort):
                 PipelineTriggerCommand(
                     job_id=job.id,
                     gif_url=command.gif_url,
+                    target_key=target_key,
                     user_id=command.user_id,
                 )
             )
