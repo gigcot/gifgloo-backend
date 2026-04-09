@@ -66,6 +66,6 @@ class PipelineCallbackService:
 
     def fail(self, job_id: str, reason: str) -> None:
         job = self._find_job(job_id)
-        self._credit.refund(job.user_id)
         job.fail(reason)
         self._composition_repo.save(job)
+        self._credit.refund(job.user_id)

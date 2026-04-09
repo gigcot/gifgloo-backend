@@ -113,7 +113,12 @@ def _checkpoint(job_id: str, stage: str, **kwargs) -> None:
 
 
 def _complete(job_id: str, draft_key: str, result_key: str) -> None:
-    _ec2_post(f"/compositions/{job_id}/complete", {"draft_key": draft_key, "result_key": result_key})
+    try:
+        _ec2_post(f"/compositions/{job_id}/complete", {"draft_key": draft_key, "result_key": result_key})
+    except urllib.request.HTTPError as e:
+        if e.code == 409:
+            return
+        raise
 
 
 def _fail(job_id: str, reason: str) -> None:

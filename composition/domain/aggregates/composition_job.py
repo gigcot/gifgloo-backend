@@ -51,6 +51,8 @@ class CompositionJob:
         self.stage = CompositionStage.BUILDING_GIF
 
     def complete(self, result_url: str, draft_asset_id: str, result_asset_id: str) -> None:
+        if self.status == CompositionStatus.COMPLETED:
+            return
         if self.status != CompositionStatus.PROCESSING:
             raise InvalidStateException("처리 중인 작업만 완료할 수 있습니다")
         self.status = CompositionStatus.COMPLETED
