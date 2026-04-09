@@ -28,9 +28,10 @@ def _issue_jwt(user_id: str) -> str:
     return jwt.encode({"user_id": user_id}, SECRET_KEY, algorithm="HS256")
 
 
-def _redirect_with_cookie(user_id: str) -> RedirectResponse:
+def _redirect_with_cookie(user_id: str, is_new_user: bool = False) -> RedirectResponse:
     token = _issue_jwt(user_id)
-    response = RedirectResponse(url=FRONTEND_CALLBACK_URL)
+    url = f"{FRONTEND_CALLBACK_URL}?is_new_user=true" if is_new_user else FRONTEND_CALLBACK_URL
+    response = RedirectResponse(url=url)
     response.set_cookie(
         key="user_token",
         value=token,
@@ -60,7 +61,7 @@ def kakao_callback(
     service: SocialLoginService = Depends(get_kakao_social_login_service),
 ):
     result = service.execute(SocialLoginCommand(provider=SocialProvider.KAKAO, code=code))
-    return _redirect_with_cookie(result.user_id)
+    return _redirect_with_cookie(result.user_id, result.is_new_user)
 
 
 # --- Google ---
@@ -83,4 +84,4 @@ def google_callback(
     service: SocialLoginService = Depends(get_google_social_login_service),
 ):
     result = service.execute(SocialLoginCommand(provider=SocialProvider.GOOGLE, code=code))
-    return _redirect_with_cookie(result.user_id)
+    return _redirect_with_cookie(result.user_id, result.is_new_user)
