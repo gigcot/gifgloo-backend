@@ -3,8 +3,15 @@ from composition.application.ports.inbound.request_composition import (
     RequestCompositionCommand,
     RequestCompositionResult,
 )
-from composition.domain.value_objects.composition_policy import MAX_FRAMES
-from shared.exceptions import ConfirmationRequiredException, BusinessRuleException, AuthorizationException
+from composition.domain.value_objects.composition_policy import MAX_FRAMES, ALLOWED_IMAGE_SIGNATURES
+from shared.exceptions import ConfirmationRequiredException, BusinessRuleException, AuthorizationException, ValidationException
+
+
+def _validate_image_format(data: bytes) -> None:
+    for sig in ALLOWED_IMAGE_SIGNATURES:
+        if data[:len(sig)] == sig:
+            return
+    raise ValidationException("지원하지 않는 이미지 형식입니다. PNG, JPEG만 지원합니다.")
 from composition.application.ports.outbound.aws.feasibility_check_port import FeasibilityCheckPort, FeasibilityCheckCommand
 from composition.application.ports.outbound.aws.storage_port import StoragePort, StorageCategory
 from composition.application.ports.outbound.aws.pipeline_trigger_port import PipelineTriggerPort, PipelineTriggerCommand
@@ -41,6 +48,8 @@ class RequestCompositionService(RequestCompositionPort):
 
         if not self._credit.has_enough_credit(command.user_id):
             raise BusinessRuleException("크레딧이 부족합니다")
+
+        _validate_image_format(command.target_bytes)
 
         feasibility = await self._feasibility.check(FeasibilityCheckCommand(gif_url=command.gif_url))
         if not feasibility.ok:
