@@ -11,7 +11,7 @@ from config.composition import get_pipeline_callback_service
 
 router = APIRouter(prefix="/internal/compositions", tags=["internal"])
 
-INTERNAL_SECRET = os.getenv("INTERNAL_SECRET", "")
+INTERNAL_SECRET = os.getenv("INTERNAL_SECRET")
 
 
 def _verify(request: Request) -> None:

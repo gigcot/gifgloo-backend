@@ -1,4 +1,5 @@
 import json
+import logging
 import os
 
 import jwt
@@ -14,6 +15,7 @@ from composition.domain.value_objects.composition_status import CompositionStatu
 from config.composition import get_request_composition_service, get_composition_status_service, get_composition_list_service
 
 router = APIRouter(prefix="/compositions", tags=["composition"])
+logger = logging.getLogger(__name__)
 
 SECRET_KEY = os.getenv("JWT_SECRET_KEY")
 
@@ -119,7 +121,8 @@ async def stream_composition_status(
                 if result.status in (CompositionStatus.COMPLETED, CompositionStatus.FAILED):
                     break
             except Exception as e:
-                yield f"data: {json.dumps({'error': str(e)})}\n\n"
+                logger.error(f"SSE error: {e}")
+                yield f"data: {json.dumps({'error': 'internal error'})}\n\n"
                 break
 
             await asyncio.sleep(2)

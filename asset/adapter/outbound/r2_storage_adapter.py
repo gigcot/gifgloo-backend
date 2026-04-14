@@ -15,7 +15,7 @@ def _make_client():
     )
 
 
-BUCKET_NAME = os.getenv("R2_BUCKET_NAME", "gifgloo")
+BUCKET_NAME = os.getenv("R2_BUCKET_NAME")
 
 
 class R2UploadAdapter(StorageUploadPort):

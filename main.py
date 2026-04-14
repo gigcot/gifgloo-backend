@@ -66,7 +66,7 @@ Base.metadata.create_all(bind=engine)
 app = FastAPI(lifespan=lifespan)
 register_error_handlers(app)
 
-CORS_ORIGINS = os.getenv("CORS_ORIGINS", "").split(",")
+CORS_ORIGINS = os.getenv("CORS_ORIGINS").split(",")
 
 app.add_middleware(
     CORSMiddleware,

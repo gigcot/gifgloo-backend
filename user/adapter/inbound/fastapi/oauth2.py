@@ -37,7 +37,7 @@ def _redirect_with_cookie(user_id: str, is_new_user: bool = False) -> RedirectRe
         value=token,
         httponly=True,
         samesite="lax",
-        secure=os.getenv("COOKIE_SECURE", "false").lower() == "true",
+        secure=bool(os.getenv("COOKIE_SECURE")),
     )
     return response
 
