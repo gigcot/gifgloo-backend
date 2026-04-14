@@ -7,7 +7,7 @@ from dotenv import load_dotenv
 load_dotenv(".env")
 
 KAKAO_CLIENT_ID = os.getenv("KAKAO_RESTAPI_KEY")
-KAKAO_CLIENT_SECRET = "TODO"
+KAKAO_CLIENT_SECRET = os.getenv("KAKAO_CLIENT_SECRET")
 KAKAO_REDIRECT_URI = os.getenv("KAKAO_REDIRECT_URI")
 
 
