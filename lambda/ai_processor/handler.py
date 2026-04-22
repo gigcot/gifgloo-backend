@@ -388,7 +388,6 @@ def run_pipeline(event: dict) -> None:
 
     except Exception as e:
         _fail(callback_url, job_id, str(e))
-        raise
 
 
 # ── 핸들러 ────────────────────────────────────────────────────

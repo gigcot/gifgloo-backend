@@ -110,7 +110,7 @@ deploy_ai_function() {
     mkdir -p /tmp/ai_build
     cp "$AI_FUNCTION_DIR/handler.py" /tmp/ai_build/
     cp -r "$AI_FUNCTION_DIR/prompts/" /tmp/ai_build/prompts/
-    pip install openai \
+    pip3 install openai \
         -t /tmp/ai_build \
         --quiet \
         --platform manylinux2014_x86_64 \
@@ -126,7 +126,7 @@ deploy_ai_function() {
         "$AI_MEMORY" \
         "$AI_TIMEOUT" \
         "" \
-        "R2_ENDPOINT_URL=$R2_ENDPOINT_URL,R2_ACCESS_KEY_ID=$R2_ACCESS_KEY_ID,R2_SECRET_ACCESS_KEY=$R2_SECRET_ACCESS_KEY,R2_BUCKET_NAME=$R2_BUCKET_NAME,OPENAI_API_KEY=$OPENAI_API_KEY,EC2_INTERNAL_URL=$EC2_INTERNAL_URL,INTERNAL_SECRET=$INTERNAL_SECRET"
+        "R2_ENDPOINT_URL=$R2_ENDPOINT_URL,R2_ACCESS_KEY_ID=$R2_ACCESS_KEY_ID,R2_SECRET_ACCESS_KEY=$R2_SECRET_ACCESS_KEY,R2_BUCKET_NAME=$R2_BUCKET_NAME,OPENAI_API_KEY=$OPENAI_API_KEY,INTERNAL_SECRET=$INTERNAL_SECRET"
 
     echo "✓ ai_processor 배포 완료"
 }
