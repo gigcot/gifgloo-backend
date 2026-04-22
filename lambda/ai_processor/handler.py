@@ -19,7 +19,6 @@ OUTPUT_SIZE = "1024x1024"
 MAX_FRAMES = 10
 GIF_PROCESSOR_FUNCTION = "gifgloo-gif-processor"
 
-EC2_INTERNAL_URL = os.environ.get("EC2_INTERNAL_URL", "")
 INTERNAL_SECRET = os.environ.get("INTERNAL_SECRET", "")
 
 SYSTEM_PROMPT_PATH = os.path.join(os.path.dirname(__file__), "prompts", "comp_order_prompt_ver7.txt")
@@ -97,8 +96,8 @@ def _upload_png(client, key: str, data: bytes) -> None:
 
 # ── EC2 콜백 ──────────────────────────────────────────────────
 
-def _ec2_post(path: str, data: dict) -> None:
-    url = f"{EC2_INTERNAL_URL}/internal{path}"
+def _ec2_post(callback_url: str, path: str, data: dict) -> None:
+    url = f"{callback_url}/internal{path}"
     body = json.dumps(data).encode()
     req = urllib.request.Request(
         url, data=body, method="POST",
@@ -108,21 +107,21 @@ def _ec2_post(path: str, data: dict) -> None:
         resp.read()
 
 
-def _checkpoint(job_id: str, stage: str, **kwargs) -> None:
-    _ec2_post(f"/compositions/{job_id}/checkpoint", {"stage": stage, **kwargs})
+def _checkpoint(callback_url: str, job_id: str, stage: str, **kwargs) -> None:
+    _ec2_post(callback_url, f"/compositions/{job_id}/checkpoint", {"stage": stage, **kwargs})
 
 
-def _complete(job_id: str, draft_key: str, result_key: str) -> None:
+def _complete(callback_url: str, job_id: str, draft_key: str, result_key: str) -> None:
     try:
-        _ec2_post(f"/compositions/{job_id}/complete", {"draft_key": draft_key, "result_key": result_key})
+        _ec2_post(callback_url, f"/compositions/{job_id}/complete", {"draft_key": draft_key, "result_key": result_key})
     except urllib.request.HTTPError as e:
         if e.code == 409:
             return
         raise
 
 
-def _fail(job_id: str, reason: str) -> None:
-    _ec2_post(f"/compositions/{job_id}/fail", {"reason": reason})
+def _fail(callback_url: str, job_id: str, reason: str) -> None:
+    _ec2_post(callback_url, f"/compositions/{job_id}/fail", {"reason": reason})
 
 
 # ── GIF 프로세서 Lambda 호출 ──────────────────────────────────
@@ -341,6 +340,7 @@ def composite_frames(job_id: str, frame_keys: list[str], draft_key: str, spec: d
 def run_pipeline(event: dict) -> None:
     job_id = event["job_id"]
     gif_url = event["gif_url"]
+    callback_url = event["callback_url"]
     resume_from = event.get("resume_from")
     durations_ms = event.get("durations_ms")
     spec_data = event.get("spec")
@@ -351,7 +351,7 @@ def run_pipeline(event: dict) -> None:
 
     try:
         if _should_run("EXTRACTING_FRAMES", resume_from):
-            _checkpoint(job_id, "EXTRACTING_FRAMES")
+            _checkpoint(callback_url, job_id, "EXTRACTING_FRAMES")
             gif_result = _invoke_gif_processor({
                 "action": "extract_frames",
                 "gif_url": gif_url,
@@ -363,19 +363,19 @@ def run_pipeline(event: dict) -> None:
         frame_keys = [_frame_key(job_id, i) for i in range(len(durations_ms))]
 
         if _should_run("ANALYZING", resume_from):
-            _checkpoint(job_id, "ANALYZING", durations_ms=durations_ms)
+            _checkpoint(callback_url, job_id, "ANALYZING", durations_ms=durations_ms)
             spec_data = analyze(frame_keys, target_key)
 
         if _should_run("GENERATING_DRAFT", resume_from):
-            _checkpoint(job_id, "GENERATING_DRAFT", spec=spec_data)
+            _checkpoint(callback_url, job_id, "GENERATING_DRAFT", spec=spec_data)
             ref_frame_key = frame_keys[spec_data["draft_reference_frame"]] if spec_data.get("draft_reference_frame") is not None else None
             generate_draft(target_key, ref_frame_key, spec_data, draft_key)
 
         if _should_run("COMPOSITING", resume_from):
-            _checkpoint(job_id, "COMPOSITING")
+            _checkpoint(callback_url, job_id, "COMPOSITING")
             composite_frames(job_id, frame_keys, draft_key, spec_data)
 
-        _checkpoint(job_id, "BUILDING_GIF")
+        _checkpoint(callback_url, job_id, "BUILDING_GIF")
         composited_keys = [_composited_key(job_id, i) for i in range(len(durations_ms))]
         _invoke_gif_processor({
             "action": "build_gif",
@@ -384,10 +384,10 @@ def run_pipeline(event: dict) -> None:
             "output_key": result_key,
         })
 
-        _complete(job_id, draft_key, result_key)
+        _complete(callback_url, job_id, draft_key, result_key)
 
     except Exception as e:
-        _fail(job_id, str(e))
+        _fail(callback_url, job_id, str(e))
         raise
 
 
