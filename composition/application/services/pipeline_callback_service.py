@@ -7,6 +7,14 @@ from composition.application.ports.outbound.domain_bridges.credit_port import Cr
 from composition.domain.value_objects.composition_stage import CompositionStage
 from shared.asset_category import AssetCategory
 from shared.exceptions import NotFoundException
+from shared.metrics import (
+    COMPOSITION_COMPLETED_TOTAL,
+    COMPOSITION_FAILED_TOTAL,
+    CREDIT_REFUND_TOTAL,
+    PIPELINE_CHECKPOINT_TOTAL,
+    PIPELINE_COMPLETE_TOTAL,
+    PIPELINE_FAIL_TOTAL,
+)
 
 
 class PipelineCallbackService:
@@ -48,6 +56,7 @@ class PipelineCallbackService:
             case CompositionStage.BUILDING_GIF:
                 job.stage_building_gif()
         self._composition_repo.save(job)
+        PIPELINE_CHECKPOINT_TOTAL.labels(stage=stage.value).inc()
 
     def complete(self, job_id: str, draft_key: str, result_key: str) -> None:
         job = self._find_job(job_id)
@@ -63,9 +72,14 @@ class PipelineCallbackService:
             result_asset_id=result_asset_id,
         )
         self._composition_repo.save(job)
+        PIPELINE_COMPLETE_TOTAL.inc()
+        COMPOSITION_COMPLETED_TOTAL.inc()
 
     def fail(self, job_id: str, reason: str) -> None:
         job = self._find_job(job_id)
         job.fail(reason)
         self._composition_repo.save(job)
         self._credit.refund(job.user_id)
+        PIPELINE_FAIL_TOTAL.inc()
+        COMPOSITION_FAILED_TOTAL.inc()
+        CREDIT_REFUND_TOTAL.inc()

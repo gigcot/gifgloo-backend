@@ -10,6 +10,7 @@ load_dotenv(".env.loadtest")
 
 from config.database import engine, Base
 from shared.fastapi_error_handler import register_error_handlers
+from shared.metrics import metrics_response, record_http_metrics
 import user.adapter.outbound.persistence.models  # noqa: F401
 import composition.adapter.outbound.persistence.models  # noqa: F401
 import asset.adapter.outbound.models  # noqa: F401
@@ -60,12 +61,18 @@ app.add_middleware(
 
 
 @app.middleware("http")
+async def metrics_middleware(request: Request, call_next):
+    return await record_http_metrics(request, call_next)
+
+
+@app.middleware("http")
 async def shutdown_guard(request: Request, call_next):
     if is_shutting_down and request.method == "POST" and request.url.path == "/compositions":
         return JSONResponse({"detail": "서버가 재시작 중입니다. 잠시 후 다시 시도해주세요."}, status_code=503)
     return await call_next(request)
 
 
+app.get("/metrics")(metrics_response)
 app.include_router(composition_router)
 app.include_router(composition_internal_router)
 app.include_router(oauth_router)

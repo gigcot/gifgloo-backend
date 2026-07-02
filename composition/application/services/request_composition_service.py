@@ -21,6 +21,7 @@ from composition.application.ports.outbound.persistence.composition_repository i
 from composition.application.ports.outbound.domain_bridges.asset_save_port import AssetSavePort, AssetSaveCommand
 from shared.asset_category import AssetCategory
 from composition.domain.aggregates.composition_job import CompositionJob
+from shared.metrics import COMPOSITION_CREATED_TOTAL, CREDIT_DEDUCT_TOTAL, CREDIT_REFUND_TOTAL
 
 
 class RequestCompositionService(RequestCompositionPort):
@@ -80,9 +81,11 @@ class RequestCompositionService(RequestCompositionPort):
 
         job.start_processing()
         self._composition_repo.save(job)
+        COMPOSITION_CREATED_TOTAL.inc()
 
         try:
             self._credit.deduct(command.user_id)
+            CREDIT_DEDUCT_TOTAL.inc()
         except Exception as e:
             job.fail(str(e))
             self._composition_repo.save(job)
@@ -99,6 +102,7 @@ class RequestCompositionService(RequestCompositionPort):
             )
         except Exception as e:
             self._credit.refund(command.user_id)
+            CREDIT_REFUND_TOTAL.inc()
             job.fail(str(e))
             self._composition_repo.save(job)
             raise

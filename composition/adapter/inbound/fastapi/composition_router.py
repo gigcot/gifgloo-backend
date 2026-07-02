@@ -13,6 +13,12 @@ from composition.application.services.get_composition_status_service import GetC
 from composition.application.services.request_composition_service import RequestCompositionService
 from composition.domain.value_objects.composition_status import CompositionStatus
 from config.composition_loadtest import get_request_composition_service, get_composition_status_service, get_composition_list_service
+from shared.metrics import (
+    SSE_ACTIVE_CONNECTIONS,
+    SSE_COMPLETED_TOTAL,
+    SSE_DISCONNECT_TOTAL,
+    SSE_FAILED_TOTAL,
+)
 
 router = APIRouter(prefix="/compositions", tags=["composition"])
 logger = logging.getLogger(__name__)
@@ -108,23 +114,37 @@ async def stream_composition_status(
 
     async def event_generator():
         import asyncio
-        while True:
-            if await request.is_disconnected():
-                break
-            try:
-                result = service.execute(GetCompositionStatusQuery(
-                    composition_job_id=composition_job_id,
-                    user_id=user_id,
-                ))
-                yield f"data: {json.dumps({'status': result.status.value, 'stage': result.stage.value if result.stage else None, 'result_url': result.result_url, 'result_asset_id': result.result_asset_id, 'failed_reason': result.failed_reason})}\n\n"
-
-                if result.status in (CompositionStatus.COMPLETED, CompositionStatus.FAILED):
+        terminal_sent = False
+        SSE_ACTIVE_CONNECTIONS.inc()
+        try:
+            while True:
+                if await request.is_disconnected():
+                    if not terminal_sent:
+                        SSE_DISCONNECT_TOTAL.inc()
                     break
-            except Exception as e:
-                logger.error(f"SSE error: {e}")
-                yield f"data: {json.dumps({'error': 'internal error'})}\n\n"
-                break
+                try:
+                    result = service.execute(GetCompositionStatusQuery(
+                        composition_job_id=composition_job_id,
+                        user_id=user_id,
+                    ))
+                    yield f"data: {json.dumps({'status': result.status.value, 'stage': result.stage.value if result.stage else None, 'result_url': result.result_url, 'result_asset_id': result.result_asset_id, 'failed_reason': result.failed_reason})}\n\n"
 
-            await asyncio.sleep(2)
+                    if result.status == CompositionStatus.COMPLETED:
+                        terminal_sent = True
+                        SSE_COMPLETED_TOTAL.inc()
+                        break
+
+                    if result.status == CompositionStatus.FAILED:
+                        terminal_sent = True
+                        SSE_FAILED_TOTAL.inc()
+                        break
+                except Exception as e:
+                    logger.error(f"SSE error: {e}")
+                    yield f"data: {json.dumps({'error': 'internal error'})}\n\n"
+                    break
+
+                await asyncio.sleep(2)
+        finally:
+            SSE_ACTIVE_CONNECTIONS.dec()
 
     return StreamingResponse(event_generator(), media_type="text/event-stream")
