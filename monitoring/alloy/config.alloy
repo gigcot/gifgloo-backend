@@ -1,0 +1,39 @@
+local.file_match "nginx" {
+  path_targets = [
+    {"__path__" = "/var/log/nginx/access.log", "job" = "nginx-access"},
+    {"__path__" = "/var/log/nginx/error.log", "job" = "nginx-error"},
+  ]
+}
+
+loki.source.file "nginx" {
+  targets    = local.file_match.nginx.targets
+  forward_to = [loki.write.default.receiver]
+}
+
+local.file_match "app" {
+  path_targets = [
+    {"__path__" = "/var/log/gifgloo/*.log", "job" = "fastapi-app"},
+  ]
+}
+
+loki.source.file "app" {
+  targets    = local.file_match.app.targets
+  forward_to = [loki.write.default.receiver]
+}
+
+local.file_match "postgres" {
+  path_targets = [
+    {"__path__" = "/var/log/postgresql/*.log", "job" = "postgres"},
+  ]
+}
+
+loki.source.file "postgres" {
+  targets    = local.file_match.postgres.targets
+  forward_to = [loki.write.default.receiver]
+}
+
+loki.write "default" {
+  endpoint {
+    url = "http://loki:3100/loki/api/v1/push"
+  }
+}
