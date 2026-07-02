@@ -11,6 +11,7 @@ bin/
 
 # 환경 변수 및 설정 (보안)
 .env
+.env.loadtest
 .flaskenv
 .secrets
 
@@ -37,6 +38,9 @@ wheels/
 *.egg-info/
 .installed.cfg
 *.egg
+
+# Load test generated secrets
+load_test/generated/
 
 ---
 
