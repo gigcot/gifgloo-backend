@@ -7,7 +7,7 @@ from sqlalchemy.orm import Session
 
 from composition.application.services.pipeline_callback_service import PipelineCallbackService
 from composition.domain.value_objects.composition_stage import CompositionStage
-from config.composition import get_pipeline_callback_service
+from config.composition_loadtest import get_pipeline_callback_service
 
 router = APIRouter(prefix="/internal/compositions", tags=["internal"])
 

@@ -6,9 +6,9 @@ from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from dotenv import load_dotenv
-load_dotenv(".env")
+load_dotenv(".env.loadtest")
 
-from config.database import engine, Base, get_db
+from config.database import engine, Base
 from shared.fastapi_error_handler import register_error_handlers
 import user.adapter.outbound.persistence.models  # noqa: F401
 import composition.adapter.outbound.persistence.models  # noqa: F401
@@ -17,9 +17,6 @@ import credit_account.adapter.outbound.models  # noqa: F401
 
 from composition.adapter.inbound.fastapi.composition_router import router as composition_router
 from composition.adapter.inbound.fastapi.composition_internal_router import router as composition_internal_router
-from composition.adapter.outbound.persistence.sqlalchemy_composition_repository import SqlAlchemyCompositionRepository
-from composition.adapter.outbound.aws.lambda_pipeline_trigger_adapter import LambdaPipelineTriggerAdapter
-from composition.application.ports.outbound.aws.pipeline_trigger_port import PipelineTriggerCommand
 from user.adapter.inbound.fastapi.oauth2 import router as oauth_router
 from user.adapter.inbound.fastapi.user_router import router as user_router
 from asset.adapter.inbound.fastapi.asset_router import router as asset_router
@@ -37,22 +34,7 @@ signal.signal(signal.SIGTERM, _handle_sigterm)
 
 
 async def _recover_processing_jobs() -> None:
-    db = next(get_db())
-    try:
-        repo = SqlAlchemyCompositionRepository(db)
-        trigger = LambdaPipelineTriggerAdapter()
-        for job in repo.find_all_processing():
-            await trigger.trigger(PipelineTriggerCommand(
-                job_id=job.id,
-                gif_url=job.gif_url,
-                target_key=f"compositions/{job.id}/target.png",
-                user_id=job.user_id,
-                resume_from=job.stage.value if job.stage else None,
-                durations_ms=job.durations_ms,
-                spec=job.spec,
-            ))
-    finally:
-        db.close()
+    return
 
 
 @asynccontextmanager
