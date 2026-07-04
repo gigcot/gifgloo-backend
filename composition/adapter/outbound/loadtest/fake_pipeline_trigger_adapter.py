@@ -15,7 +15,7 @@ class FakePipelineTriggerAdapter(PipelineTriggerPort):
     def __init__(self):
         self._callback_url = os.environ["LOADTEST_CALLBACK_URL"].rstrip("/")
         self._internal_secret = os.environ["INTERNAL_SECRET"]
-        self._mode = os.environ["LOADTEST_PIPELINE_MODE"].lower()
+        self._fail_marker = os.environ["LOADTEST_PIPELINE_FAIL_MARKER"]
         self._stage_delay_seconds = {
             CompositionStage.EXTRACTING_FRAMES: float(
                 os.environ["LOADTEST_DELAY_EXTRACTING_FRAMES_SECONDS"]
@@ -30,7 +30,8 @@ class FakePipelineTriggerAdapter(PipelineTriggerPort):
         self._completion_delay_seconds = float(os.environ["LOADTEST_DELAY_COMPLETION_SECONDS"])
 
     async def trigger(self, command: PipelineTriggerCommand) -> None:
-        FAKE_PIPELINE_TRIGGER_TOTAL.labels(mode=self._mode).inc()
+        mode = self._mode_for(command)
+        FAKE_PIPELINE_TRIGGER_TOTAL.labels(mode=mode).inc()
         asyncio.create_task(self._run_pipeline(command))
 
     async def _run_pipeline(self, command: PipelineTriggerCommand) -> None:
@@ -52,7 +53,7 @@ class FakePipelineTriggerAdapter(PipelineTriggerPort):
             await self._checkpoint(client, command.job_id, CompositionStage.BUILDING_GIF)
             await asyncio.sleep(self._completion_delay_seconds)
 
-            if self._mode == "fail":
+            if self._mode_for(command) == "fail":
                 await self._post(
                     client,
                     f"/internal/compositions/{command.job_id}/fail",
@@ -68,6 +69,11 @@ class FakePipelineTriggerAdapter(PipelineTriggerPort):
                     "result_key": f"compositions/{command.job_id}/result.gif",
                 },
             )
+
+    def _mode_for(self, command: PipelineTriggerCommand) -> str:
+        if self._fail_marker in command.gif_url:
+            return "fail"
+        return "complete"
 
     async def _checkpoint(
         self,
