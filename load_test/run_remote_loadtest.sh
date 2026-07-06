@@ -20,6 +20,7 @@ LOADTEST_SPAWN_RATE="${LOADTEST_SPAWN_RATE:-1}"
 LOADTEST_RUN_TIME="${LOADTEST_RUN_TIME:-1m}"
 LOADTEST_PROFILE="${LOADTEST_PROFILE:-manual}"
 LOADTEST_REMOTE_PROM_OUTPUT="${LOADTEST_REMOTE_PROM_OUTPUT:-/tmp/gifgloo-node-exporter/credit_consistency.prom}"
+LOADTEST_REMOTE_PYTHON="${LOADTEST_REMOTE_PYTHON:-${LOADTEST_REMOTE_DIR}/venv/bin/python}"
 
 timestamp="$(date +%Y%m%d_%H%M%S)"
 result_dir="load_test/results/${LOADTEST_PROFILE}/${timestamp}_${LOADTEST_USERS}u"
@@ -32,7 +33,7 @@ else
 fi
 
 echo "[1/5] remote reset and seed"
-ssh "$LOADTEST_EC2_HOST" "cd ${LOADTEST_REMOTE_DIR} && python3 load_test/reset.py && python3 load_test/seed.py"
+ssh "$LOADTEST_EC2_HOST" "cd ${LOADTEST_REMOTE_DIR} && ${LOADTEST_REMOTE_PYTHON} load_test/reset.py && ${LOADTEST_REMOTE_PYTHON} load_test/seed.py"
 
 echo "[2/5] copy token csv from remote"
 scp "${LOADTEST_EC2_HOST}:${remote_token_path}" "$LOADTEST_TOKEN_OUTPUT_PATH"
@@ -48,7 +49,7 @@ locust -f load_test/locustfile.py \
   --csv "${result_dir}/result"
 
 echo "[4/5] remote credit consistency check"
-ssh "$LOADTEST_EC2_HOST" "cd ${LOADTEST_REMOTE_DIR} && mkdir -p \"\$(dirname ${LOADTEST_REMOTE_PROM_OUTPUT})\" && python load_test/verify_credit_consistency.py --prometheus-output ${LOADTEST_REMOTE_PROM_OUTPUT}"
+ssh "$LOADTEST_EC2_HOST" "cd ${LOADTEST_REMOTE_DIR} && mkdir -p \"\$(dirname ${LOADTEST_REMOTE_PROM_OUTPUT})\" && ${LOADTEST_REMOTE_PYTHON} load_test/verify_credit_consistency.py --prometheus-output ${LOADTEST_REMOTE_PROM_OUTPUT}"
 
 echo "[5/5] done"
 echo "result_dir=${result_dir}"
