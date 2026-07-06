@@ -59,6 +59,7 @@ services:
       - "--path.procfs=/host/proc"
       - "--path.sysfs=/host/sys"
       - "--path.rootfs=/rootfs"
+      - "--collector.textfile.directory=/textfile_collector"
       - "--collector.filesystem.mount-points-exclude=^/(sys|proc|dev|host|etc)($$|/)"
     ports:
       - "127.0.0.1:9100:9100"
@@ -66,6 +67,7 @@ services:
       - /proc:/host/proc:ro
       - /sys:/host/sys:ro
       - /:/rootfs:ro
+      - /tmp/gifgloo-node-exporter:/textfile_collector:ro
 
   postgres-exporter:
     image: prometheuscommunity/postgres-exporter:latest

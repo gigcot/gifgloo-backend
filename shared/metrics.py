@@ -78,6 +78,24 @@ CREDIT_REFUND_TOTAL = Counter(
     "credit_refund_total",
     "Credit refunds.",
 )
+DB_QUERY_TOTAL = Counter(
+    "db_query_total",
+    "Database queries.",
+    ["operation", "status"],
+)
+DB_QUERY_DURATION_SECONDS = Histogram(
+    "db_query_duration_seconds",
+    "Database query duration in seconds.",
+    ["operation"],
+)
+DB_POOL_CHECKOUT_TOTAL = Counter(
+    "db_pool_checkout_total",
+    "Database pool checkouts.",
+)
+DB_POOL_CHECKED_OUT = Gauge(
+    "db_pool_checked_out",
+    "Database connections currently checked out from the SQLAlchemy pool.",
+)
 
 
 def metrics_response() -> Response:

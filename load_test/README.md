@@ -8,11 +8,13 @@ EC2에서 `.env.loadtest`를 작성한 뒤 실행한다.
 
 ```bash
 docker compose --env-file .env.loadtest -f load_test/docker-compose.yml up -d db
+python load_test/reset.py
 python load_test/seed.py
 ```
 
 생성된 token CSV는 Locust에서 `user_token` 쿠키로 사용한다.
 `LOADTEST_USER_COUNT=1`이면 smoke용 단일 유저 seed로 쓸 수 있다.
+단계별 결과가 섞이지 않도록 smoke/baseline/load/stress 실행 전에는 `reset.py` 후 `seed.py`를 다시 실행한다.
 
 필수 `.env.loadtest`:
 
@@ -46,6 +48,7 @@ LOADTEST_TOKEN_OUTPUT_PATH
 ## Locust
 
 `LOADTEST_PIPELINE_FAIL_MARKER`가 `gif_url`에 포함되면 fake pipeline은 `fail` callback을 호출한다.
+`LOADTEST_PIPELINE_FAIL_STAGE`를 `ANALYZING`, `GENERATING_DRAFT`, `COMPOSITING`, `BUILDING_GIF` 중 하나로 지정하면 해당 checkpoint 이후 fail callback을 호출한다. 비워두면 기존처럼 모든 checkpoint 이후 fail callback을 호출한다.
 `LOADTEST_*_WEIGHT` 값으로 페이지 조회와 success/fail flow 비율을 조절한다.
 
 ```bash
@@ -70,4 +73,71 @@ LOADTEST_SUCCESS_WEIGHT
 LOADTEST_FAIL_WEIGHT
 LOADTEST_MY_ASSETS_PAGE_WEIGHT
 LOADTEST_STATUS_TIMEOUT_SECONDS
+```
+
+선택 Locust env:
+
+```text
+LOADTEST_CONFIRMATION_WEIGHT
+LOADTEST_FEASIBILITY_REJECT_WEIGHT
+LOADTEST_PIPELINE_FAIL_STAGE
+```
+
+로컬에서 Locust를 실행하고 EC2에서 reset/seed/verify를 수행하려면:
+
+```bash
+LOADTEST_EC2_HOST=ubuntu@<ec2-host> \
+LOADTEST_REMOTE_DIR=~/gifgloo-backend-loadtest \
+LOADTEST_USERS=100 \
+LOADTEST_SPAWN_RATE=10 \
+LOADTEST_RUN_TIME=10m \
+LOADTEST_PROFILE=load \
+./load_test/run_remote_loadtest.sh
+```
+
+흐름:
+
+```text
+EC2 reset.py
+EC2 seed.py
+EC2 token CSV -> local scp
+local locust
+EC2 verify_credit_consistency.py
+```
+
+## Credit consistency
+
+테스트 후 크레딧 정합성을 확인한다.
+
+```bash
+python load_test/verify_credit_consistency.py
+```
+
+Grafana에서 보려면 node-exporter textfile collector 경로에 Prometheus 포맷으로 쓴다.
+
+```bash
+python load_test/verify_credit_consistency.py \
+  --prometheus-output /tmp/gifgloo-node-exporter/credit_consistency.prom
+```
+
+노출되는 주요 지표:
+
+```text
+loadtest_credit_checked_users
+loadtest_credit_inconsistent_users
+loadtest_credit_balance_mismatch_users
+loadtest_credit_deduct_mismatch_users
+loadtest_credit_refund_mismatch_users
+```
+
+## DB/SQL observability
+
+loadtest Postgres는 `pg_stat_statements`와 `log_min_duration_statement=200`으로 실행된다.
+FastAPI `/metrics`에는 SQLAlchemy 기반 지표가 추가된다.
+
+```text
+db_query_total
+db_query_duration_seconds
+db_pool_checkout_total
+db_pool_checked_out
 ```

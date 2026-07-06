@@ -6,6 +6,7 @@ from pathlib import Path
 
 import jwt
 from dotenv import load_dotenv
+from sqlalchemy import text
 
 sys.path.append(str(Path(__file__).resolve().parents[1]))
 
@@ -23,6 +24,9 @@ from user.domain.value_objects.social_account import SocialProvider
 
 
 def main() -> None:
+    with engine.begin() as connection:
+        connection.execute(text("CREATE EXTENSION IF NOT EXISTS pg_stat_statements"))
+
     Base.metadata.create_all(bind=engine)
 
     user_prefix = os.environ["LOADTEST_USER_PREFIX"]
