@@ -21,7 +21,18 @@ COMPOSE_PAGE_WEIGHT = int(os.environ["LOADTEST_COMPOSE_PAGE_WEIGHT"])
 SUCCESS_WEIGHT = int(os.environ["LOADTEST_SUCCESS_WEIGHT"])
 FAIL_WEIGHT = int(os.environ["LOADTEST_FAIL_WEIGHT"])
 MY_ASSETS_PAGE_WEIGHT = int(os.environ["LOADTEST_MY_ASSETS_PAGE_WEIGHT"])
+CONFIRMATION_WEIGHT = (
+    int(os.environ["LOADTEST_CONFIRMATION_WEIGHT"])
+    if "LOADTEST_CONFIRMATION_WEIGHT" in os.environ
+    else 0
+)
+FEASIBILITY_REJECT_WEIGHT = (
+    int(os.environ["LOADTEST_FEASIBILITY_REJECT_WEIGHT"])
+    if "LOADTEST_FEASIBILITY_REJECT_WEIGHT" in os.environ
+    else 0
+)
 STATUS_TIMEOUT_SECONDS = float(os.environ["LOADTEST_STATUS_TIMEOUT_SECONDS"])
+FEASIBILITY_BLOCK_MARKER = os.environ["LOADTEST_FEASIBILITY_BLOCK_MARKER"]
 
 
 def _load_tokens() -> list[dict[str, str]]:
@@ -43,13 +54,13 @@ class GifglooLoadTestUser(HttpUser):
 
     @task(HOME_PAGE_WEIGHT)
     def home_page_load(self) -> None:
-        self.client.get("/users/me", name="GET /users/me")
+        self.get_me(times=2)
         self.client.get("/credits/balance", name="GET /credits/balance")
         self.client.get("/compositions", name="GET /compositions")
 
     @task(COMPOSE_PAGE_WEIGHT)
     def compose_page_load(self) -> None:
-        self.client.get("/users/me", name="GET /users/me")
+        self.get_me(times=2)
         self.client.get("/credits/balance", name="GET /credits/balance")
 
     @task(SUCCESS_WEIGHT)
@@ -60,25 +71,72 @@ class GifglooLoadTestUser(HttpUser):
     def composition_fail_flow(self) -> None:
         self.composition_flow(should_fail=True)
 
+    @task(CONFIRMATION_WEIGHT)
+    def composition_confirmation_flow(self) -> None:
+        self.compose_page_load()
+        with TARGET_IMAGE.open("rb") as target_file:
+            with self.client.post(
+                "/compositions",
+                name="POST /compositions confirmation required",
+                data={
+                    "gif_url": GIF_URL,
+                    "acknowledge_frame_reduction": "false",
+                },
+                files={"target_file": (TARGET_IMAGE.name, target_file, "image/jpeg")},
+                catch_response=True,
+            ) as response:
+                if response.status_code != 422:
+                    response.failure(f"expected 422 confirmation, got {response.status_code}")
+                    return
+                try:
+                    body = response.json()
+                except JSONDecodeError as exc:
+                    response.failure(f"invalid confirmation JSON: {exc}")
+                    return
+                if body["error"] != "CONFIRMATION_REQUIRED":
+                    response.failure(f"expected CONFIRMATION_REQUIRED, got {body['error']}")
+                    return
+                response.success()
+
+        response = self.post_composition(GIF_URL, acknowledge_frame_reduction=True)
+        if response.status_code != 200:
+            return
+        job_id = response.json()["composition_job_id"]
+        self.wait_for_sse_status(job_id, "COMPLETED")
+        self.client.get("/compositions", name="GET /compositions")
+
+    @task(FEASIBILITY_REJECT_WEIGHT)
+    def composition_feasibility_reject_flow(self) -> None:
+        self.compose_page_load()
+        with TARGET_IMAGE.open("rb") as target_file:
+            with self.client.post(
+                "/compositions",
+                name="POST /compositions feasibility rejected",
+                data={
+                    "gif_url": self.feasibility_reject_gif_url(),
+                    "acknowledge_frame_reduction": "true",
+                },
+                files={"target_file": (TARGET_IMAGE.name, target_file, "image/jpeg")},
+                catch_response=True,
+            ) as response:
+                if response.status_code == 400:
+                    response.success()
+                    return
+                response.failure(f"expected 400 feasibility rejection, got {response.status_code}")
+
     @task(MY_ASSETS_PAGE_WEIGHT)
     def my_assets_page_load(self) -> None:
+        self.get_me(times=2)
+        self.client.get("/credits/balance", name="GET /credits/balance")
         self.client.get("/compositions", name="GET /compositions")
+        self.client.get("/assets", name="GET /assets")
 
     def composition_flow(self, should_fail: bool) -> None:
         self.compose_page_load()
 
         gif_url = self.fail_gif_url() if should_fail else GIF_URL
 
-        with TARGET_IMAGE.open("rb") as target_file:
-            response = self.client.post(
-                "/compositions",
-                name="POST /compositions",
-                data={
-                    "gif_url": gif_url,
-                    "acknowledge_frame_reduction": "true",
-                },
-                files={"target_file": (TARGET_IMAGE.name, target_file, "image/jpeg")},
-            )
+        response = self.post_composition(gif_url, acknowledge_frame_reduction=True)
         if response.status_code != 200:
             return
 
@@ -90,6 +148,26 @@ class GifglooLoadTestUser(HttpUser):
     def fail_gif_url(self) -> str:
         separator = "&" if "?" in GIF_URL else "?"
         return f"{GIF_URL}{separator}loadtest={PIPELINE_FAIL_MARKER}"
+
+    def feasibility_reject_gif_url(self) -> str:
+        separator = "&" if "?" in GIF_URL else "?"
+        return f"{GIF_URL}{separator}loadtest={FEASIBILITY_BLOCK_MARKER}"
+
+    def get_me(self, times: int) -> None:
+        for _ in range(times):
+            self.client.get("/users/me", name="GET /users/me")
+
+    def post_composition(self, gif_url: str, acknowledge_frame_reduction: bool):
+        with TARGET_IMAGE.open("rb") as target_file:
+            return self.client.post(
+                "/compositions",
+                name="POST /compositions",
+                data={
+                    "gif_url": gif_url,
+                    "acknowledge_frame_reduction": str(acknowledge_frame_reduction).lower(),
+                },
+                files={"target_file": (TARGET_IMAGE.name, target_file, "image/jpeg")},
+            )
 
     def wait_for_sse_status(self, job_id: str, expected_status: str) -> None:
         started_at = time.monotonic()

@@ -16,6 +16,11 @@ class FakePipelineTriggerAdapter(PipelineTriggerPort):
         self._callback_url = os.environ["LOADTEST_CALLBACK_URL"].rstrip("/")
         self._internal_secret = os.environ["INTERNAL_SECRET"]
         self._fail_marker = os.environ["LOADTEST_PIPELINE_FAIL_MARKER"]
+        self._fail_stage = (
+            CompositionStage(os.environ["LOADTEST_PIPELINE_FAIL_STAGE"])
+            if "LOADTEST_PIPELINE_FAIL_STAGE" in os.environ
+            else None
+        )
         self._stage_delay_seconds = {
             CompositionStage.EXTRACTING_FRAMES: float(
                 os.environ["LOADTEST_DELAY_EXTRACTING_FRAMES_SECONDS"]
@@ -36,24 +41,40 @@ class FakePipelineTriggerAdapter(PipelineTriggerPort):
 
     async def _run_pipeline(self, command: PipelineTriggerCommand) -> None:
         async with httpx.AsyncClient(timeout=30) as client:
-            await self._checkpoint(client, command.job_id, CompositionStage.EXTRACTING_FRAMES)
-            await self._checkpoint(
+            mode = self._mode_for(command)
+            await self._checkpoint_or_fail(client, command, CompositionStage.EXTRACTING_FRAMES)
+            if mode == "fail" and self._fail_stage == CompositionStage.EXTRACTING_FRAMES:
+                return
+
+            await self._checkpoint_or_fail(
                 client,
-                command.job_id,
+                command,
                 CompositionStage.ANALYZING,
                 {"durations_ms": command.durations_ms},
             )
-            await self._checkpoint(
+            if mode == "fail" and self._fail_stage == CompositionStage.ANALYZING:
+                return
+
+            await self._checkpoint_or_fail(
                 client,
-                command.job_id,
+                command,
                 CompositionStage.GENERATING_DRAFT,
                 {"spec": command.spec or {"mode": "loadtest"}},
             )
-            await self._checkpoint(client, command.job_id, CompositionStage.COMPOSITING)
-            await self._checkpoint(client, command.job_id, CompositionStage.BUILDING_GIF)
+            if mode == "fail" and self._fail_stage == CompositionStage.GENERATING_DRAFT:
+                return
+
+            await self._checkpoint_or_fail(client, command, CompositionStage.COMPOSITING)
+            if mode == "fail" and self._fail_stage == CompositionStage.COMPOSITING:
+                return
+
+            await self._checkpoint_or_fail(client, command, CompositionStage.BUILDING_GIF)
+            if mode == "fail" and self._fail_stage == CompositionStage.BUILDING_GIF:
+                return
+
             await asyncio.sleep(self._completion_delay_seconds)
 
-            if self._mode_for(command) == "fail":
+            if mode == "fail":
                 await self._post(
                     client,
                     f"/internal/compositions/{command.job_id}/fail",
@@ -74,6 +95,21 @@ class FakePipelineTriggerAdapter(PipelineTriggerPort):
         if self._fail_marker in command.gif_url:
             return "fail"
         return "complete"
+
+    async def _checkpoint_or_fail(
+        self,
+        client: httpx.AsyncClient,
+        command: PipelineTriggerCommand,
+        stage: CompositionStage,
+        extra: dict | None = None,
+    ) -> None:
+        await self._checkpoint(client, command.job_id, stage, extra)
+        if self._mode_for(command) == "fail" and self._fail_stage == stage:
+            await self._post(
+                client,
+                f"/internal/compositions/{command.job_id}/fail",
+                {"reason": f"loadtest pipeline failure at {stage.value}"},
+            )
 
     async def _checkpoint(
         self,
