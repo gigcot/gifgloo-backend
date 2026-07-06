@@ -32,7 +32,7 @@ else
 fi
 
 echo "[1/5] remote reset and seed"
-ssh "$LOADTEST_EC2_HOST" "cd ${LOADTEST_REMOTE_DIR} && python load_test/reset.py && python load_test/seed.py"
+ssh "$LOADTEST_EC2_HOST" "cd ${LOADTEST_REMOTE_DIR} && python3 load_test/reset.py && python3 load_test/seed.py"
 
 echo "[2/5] copy token csv from remote"
 scp "${LOADTEST_EC2_HOST}:${remote_token_path}" "$LOADTEST_TOKEN_OUTPUT_PATH"
