@@ -41,6 +41,7 @@ wheels/
 
 # Load test generated secrets
 load_test/generated/
+load_test/results/
 
 ---
 
