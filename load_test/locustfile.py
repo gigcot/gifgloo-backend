@@ -171,40 +171,65 @@ class GifglooLoadTestUser(HttpUser):
 
     def wait_for_sse_status(self, job_id: str, expected_status: str) -> None:
         started_at = time.monotonic()
-        with self.client.get(
-            f"/compositions/{job_id}/status",
-            name="GET /compositions/{composition_job_id}/status",
-            stream=True,
-            timeout=STATUS_TIMEOUT_SECONDS + 5,
-            catch_response=True,
-        ) as response:
-            if response.status_code != 200:
-                response.failure(f"unexpected SSE status {response.status_code}")
-                return
-
-            for line in response.iter_lines(decode_unicode=True):
-                if time.monotonic() - started_at > STATUS_TIMEOUT_SECONDS:
-                    response.failure(f"SSE timed out after {STATUS_TIMEOUT_SECONDS}s")
-                    response.close()
+        wait_metric_exception = None
+        try:
+            with self.client.get(
+                f"/compositions/{job_id}/status",
+                name="GET /compositions/{composition_job_id}/status",
+                stream=True,
+                timeout=STATUS_TIMEOUT_SECONDS + 5,
+                catch_response=True,
+            ) as response:
+                if response.status_code != 200:
+                    message = f"unexpected SSE status {response.status_code}"
+                    wait_metric_exception = RuntimeError(message)
+                    response.failure(message)
                     return
 
-                if not line or not line.startswith("data: "):
-                    continue
+                for line in response.iter_lines(decode_unicode=True):
+                    if time.monotonic() - started_at > STATUS_TIMEOUT_SECONDS:
+                        message = f"SSE timed out after {STATUS_TIMEOUT_SECONDS}s"
+                        wait_metric_exception = TimeoutError(message)
+                        response.failure(message)
+                        response.close()
+                        return
 
-                try:
-                    event = json.loads(line.removeprefix("data: "))
-                except JSONDecodeError as exc:
-                    response.failure(f"invalid SSE event JSON: {exc}")
-                    return
+                    if not line or not line.startswith("data: "):
+                        continue
 
-                if "error" in event:
-                    response.failure(event["error"])
-                    return
+                    try:
+                        event = json.loads(line.removeprefix("data: "))
+                    except JSONDecodeError as exc:
+                        wait_metric_exception = exc
+                        response.failure(f"invalid SSE event JSON: {exc}")
+                        return
 
-                status = event["status"]
-                if status in ("COMPLETED", "FAILED"):
-                    if status != expected_status:
-                        response.failure(f"expected {expected_status}, got {status}")
-                    return
+                    if "error" in event:
+                        wait_metric_exception = RuntimeError(event["error"])
+                        response.failure(event["error"])
+                        return
 
-            response.failure("SSE closed before terminal status")
+                    status = event["status"]
+                    if status in ("COMPLETED", "FAILED"):
+                        if status != expected_status:
+                            message = f"expected {expected_status}, got {status}"
+                            wait_metric_exception = RuntimeError(message)
+                            response.failure(message)
+                        else:
+                            response.success()
+                        response.close()
+                        return
+
+                wait_metric_exception = RuntimeError("SSE closed before terminal status")
+                response.failure("SSE closed before terminal status")
+        except Exception as exc:
+            wait_metric_exception = exc
+            raise
+        finally:
+            self.environment.events.request.fire(
+                request_type="SSE",
+                name="WAIT /compositions/{composition_job_id}/terminal_status",
+                response_time=(time.monotonic() - started_at) * 1000,
+                response_length=0,
+                exception=wait_metric_exception,
+            )
