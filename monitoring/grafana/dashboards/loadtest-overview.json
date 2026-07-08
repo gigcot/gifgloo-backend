@@ -1029,13 +1029,15 @@
         "defaults": {
           "custom": {
             "drawStyle": "line",
-            "fillOpacity": 15,
+            "fillOpacity": 30,
             "lineInterpolation": "linear",
-            "lineWidth": 2,
-            "showPoints": "never"
+            "lineWidth": 4,
+            "showPoints": "always",
+            "spanNulls": true,
+            "insertNulls": false
           },
           "unit": "short",
-          "max": 15,
+          "max": 16,
           "thresholds": {
             "mode": "absolute",
             "steps": [
@@ -1052,9 +1054,65 @@
                 "value": 15
               }
             ]
-          }
+          },
+          "min": 0
         },
-        "overrides": []
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "checked out"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "green"
+                }
+              },
+              {
+                "id": "custom.lineWidth",
+                "value": 4
+              },
+              {
+                "id": "custom.fillOpacity",
+                "value": 35
+              },
+              {
+                "id": "custom.showPoints",
+                "value": "always"
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "default cap"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "red"
+                }
+              },
+              {
+                "id": "custom.lineWidth",
+                "value": 2
+              },
+              {
+                "id": "custom.fillOpacity",
+                "value": 0
+              },
+              {
+                "id": "custom.showPoints",
+                "value": "never"
+              }
+            ]
+          }
+        ]
       },
       "gridPos": {
         "h": 8,
@@ -1079,7 +1137,7 @@
       },
       "targets": [
         {
-          "expr": "db_pool_checked_out",
+          "expr": "db_pool_checked_out or vector(0)",
           "legendFormat": "checked out",
           "refId": "A"
         },
