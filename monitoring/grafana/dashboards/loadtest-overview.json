@@ -541,10 +541,12 @@
         "defaults": {
           "custom": {
             "drawStyle": "line",
-            "fillOpacity": 15,
+            "fillOpacity": 25,
             "lineInterpolation": "linear",
-            "lineWidth": 2,
-            "showPoints": "never"
+            "lineWidth": 3,
+            "showPoints": "always",
+            "spanNulls": true,
+            "insertNulls": false
           },
           "unit": "short"
         },
@@ -573,7 +575,7 @@
       },
       "targets": [
         {
-          "expr": "sum by (method, path) (http_requests_in_progress)",
+          "expr": "sum by (method, path) (http_requests_in_progress) or vector(0)",
           "legendFormat": "{{method}} {{path}}",
           "refId": "A"
         }
@@ -587,10 +589,12 @@
         "defaults": {
           "custom": {
             "drawStyle": "line",
-            "fillOpacity": 15,
+            "fillOpacity": 25,
             "lineInterpolation": "linear",
-            "lineWidth": 2,
-            "showPoints": "never"
+            "lineWidth": 3,
+            "showPoints": "always",
+            "spanNulls": true,
+            "insertNulls": false
           },
           "unit": "short"
         },
@@ -619,7 +623,7 @@
       },
       "targets": [
         {
-          "expr": "sse_active_connections",
+          "expr": "sse_active_connections or vector(0)",
           "legendFormat": "active",
           "refId": "A"
         }
@@ -633,10 +637,12 @@
         "defaults": {
           "custom": {
             "drawStyle": "line",
-            "fillOpacity": 15,
+            "fillOpacity": 25,
             "lineInterpolation": "linear",
-            "lineWidth": 2,
-            "showPoints": "never"
+            "lineWidth": 3,
+            "showPoints": "always",
+            "spanNulls": true,
+            "insertNulls": false
           },
           "unit": "short"
         },
@@ -665,7 +671,7 @@
       },
       "targets": [
         {
-          "expr": "sum(http_requests_in_progress)",
+          "expr": "sum(http_requests_in_progress) or vector(0)",
           "legendFormat": "total in progress",
           "refId": "A"
         }
@@ -679,10 +685,16 @@
         "defaults": {
           "custom": {
             "drawStyle": "bars",
-            "fillOpacity": 35,
+            "fillOpacity": 60,
             "lineInterpolation": "linear",
             "lineWidth": 1,
-            "showPoints": "never"
+            "showPoints": "never",
+            "spanNulls": true,
+            "insertNulls": false,
+            "stacking": {
+              "group": "A",
+              "mode": "normal"
+            }
           },
           "unit": "short"
         },
@@ -711,17 +723,17 @@
       },
       "targets": [
         {
-          "expr": "sum by (stage) (increase(pipeline_checkpoint_total[$__rate_interval]))",
+          "expr": "sum by (stage) (increase(pipeline_checkpoint_total[1m]))",
           "legendFormat": "checkpoint {{stage}}",
           "refId": "A"
         },
         {
-          "expr": "increase(pipeline_complete_total[$__rate_interval])",
+          "expr": "increase(pipeline_complete_total[1m]) or vector(0)",
           "legendFormat": "complete",
           "refId": "B"
         },
         {
-          "expr": "increase(pipeline_fail_total[$__rate_interval])",
+          "expr": "increase(pipeline_fail_total[1m]) or vector(0)",
           "legendFormat": "fail",
           "refId": "C"
         }
@@ -735,10 +747,12 @@
         "defaults": {
           "custom": {
             "drawStyle": "line",
-            "fillOpacity": 15,
+            "fillOpacity": 25,
             "lineInterpolation": "linear",
-            "lineWidth": 2,
-            "showPoints": "never"
+            "lineWidth": 3,
+            "showPoints": "always",
+            "spanNulls": true,
+            "insertNulls": false
           },
           "unit": "short"
         },
@@ -772,12 +786,12 @@
           "refId": "A"
         },
         {
-          "expr": "pipeline_complete_total",
+          "expr": "pipeline_complete_total or vector(0)",
           "legendFormat": "complete",
           "refId": "B"
         },
         {
-          "expr": "pipeline_fail_total",
+          "expr": "pipeline_fail_total or vector(0)",
           "legendFormat": "fail",
           "refId": "C"
         }
