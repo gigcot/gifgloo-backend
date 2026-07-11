@@ -12,7 +12,12 @@ from composition.application.services.get_composition_list_service import GetCom
 from composition.application.services.get_composition_status_service import GetCompositionStatusService
 from composition.application.services.request_composition_service import RequestCompositionService
 from composition.domain.value_objects.composition_status import CompositionStatus
-from config.composition_loadtest import get_request_composition_service, get_composition_status_service, get_composition_list_service
+from config.composition_loadtest import (
+    get_composition_list_service,
+    get_composition_status_once,
+    get_composition_status_service,
+    get_request_composition_service,
+)
 from shared.metrics import (
     SSE_ACTIVE_CONNECTIONS,
     SSE_COMPLETED_TOTAL,
@@ -108,7 +113,6 @@ def get_composition_status(
 async def stream_composition_status(
     request: Request,
     composition_job_id: str,
-    service: GetCompositionStatusService = Depends(get_composition_status_service),
 ):
     user_id = _get_user_id(request)
 
@@ -123,10 +127,12 @@ async def stream_composition_status(
                         SSE_DISCONNECT_TOTAL.inc()
                     break
                 try:
-                    result = service.execute(GetCompositionStatusQuery(
-                        composition_job_id=composition_job_id,
-                        user_id=user_id,
-                    ))
+                    result = get_composition_status_once(
+                        GetCompositionStatusQuery(
+                            composition_job_id=composition_job_id,
+                            user_id=user_id,
+                        )
+                    )
                     yield f"data: {json.dumps({'status': result.status.value, 'stage': result.stage.value if result.stage else None, 'result_url': result.result_url, 'result_asset_id': result.result_asset_id, 'failed_reason': result.failed_reason})}\n\n"
 
                     if result.status == CompositionStatus.COMPLETED:

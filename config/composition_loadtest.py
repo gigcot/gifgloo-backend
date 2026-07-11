@@ -1,7 +1,7 @@
 from fastapi import Depends
 from sqlalchemy.orm import Session
 
-from config.database import get_db
+from config.database import SessionLocal, get_db
 
 from user.adapter.outbound.persistence.sqlalchemy_user_repository import SqlAlchemyUserRepository
 from user.application.services.verify_user_service import VerifyUserService
@@ -25,6 +25,10 @@ from composition.adapter.outbound.loadtest.fake_feasibility_check_adapter import
 from composition.adapter.outbound.loadtest.fake_pipeline_trigger_adapter import FakePipelineTriggerAdapter
 from composition.adapter.outbound.loadtest.fake_storage_adapter import FakeStorageAdapter
 
+from composition.application.ports.inbound.get_composition_status import (
+    GetCompositionStatusQuery,
+    GetCompositionStatusResult,
+)
 from composition.application.services.request_composition_service import RequestCompositionService
 from composition.application.services.get_composition_status_service import GetCompositionStatusService
 from composition.application.services.get_composition_list_service import GetCompositionListService
@@ -67,6 +71,17 @@ def get_composition_status_service(db: Session = Depends(get_db)) -> GetComposit
     return GetCompositionStatusService(
         composition_repo=SqlAlchemyCompositionRepository(db),
     )
+
+
+def get_composition_status_once(query: GetCompositionStatusQuery) -> GetCompositionStatusResult:
+    db = SessionLocal()
+    try:
+        service = GetCompositionStatusService(
+            composition_repo=SqlAlchemyCompositionRepository(db),
+        )
+        return service.execute(query)
+    finally:
+        db.close()
 
 
 def get_composition_list_service(db: Session = Depends(get_db)) -> GetCompositionListService:
