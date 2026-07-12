@@ -5,6 +5,8 @@ from fastapi import Request, Response
 from prometheus_client import CONTENT_TYPE_LATEST, Counter, Gauge, Histogram, generate_latest
 from starlette.responses import Response as StarletteResponse
 
+from shared.request_context import current_request_path
+
 
 HTTP_REQUESTS_TOTAL = Counter(
     "http_requests_total",
@@ -96,6 +98,11 @@ DB_POOL_CHECKED_OUT = Gauge(
     "db_pool_checked_out",
     "Database connections currently checked out from the SQLAlchemy pool.",
 )
+DB_CONNECTION_HOLD_SECONDS = Histogram(
+    "db_connection_hold_seconds",
+    "Time a database connection stayed checked out from the SQLAlchemy pool.",
+    ["path"],
+)
 
 
 def metrics_response() -> Response:
@@ -129,6 +136,7 @@ async def record_http_metrics(
     if in_progress_path == "/metrics":
         return await call_next(request)
 
+    request_path_token = current_request_path.set(in_progress_path)
     HTTP_REQUESTS_IN_PROGRESS.labels(method=method, path=in_progress_path).inc()
     started_at = time.perf_counter()
     try:
@@ -142,6 +150,7 @@ async def record_http_metrics(
         raise
     finally:
         HTTP_REQUESTS_IN_PROGRESS.labels(method=method, path=in_progress_path).dec()
+        current_request_path.reset(request_path_token)
 
     path = route_path(request)
     HTTP_REQUESTS_TOTAL.labels(method=method, path=path, status=str(response.status_code)).inc()

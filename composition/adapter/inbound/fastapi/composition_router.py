@@ -24,6 +24,7 @@ from shared.metrics import (
     SSE_DISCONNECT_TOTAL,
     SSE_FAILED_TOTAL,
 )
+from shared.request_context import current_request_path
 
 router = APIRouter(prefix="/compositions", tags=["composition"])
 logger = logging.getLogger(__name__)
@@ -119,6 +120,7 @@ async def stream_composition_status(
     async def event_generator():
         import asyncio
         terminal_sent = False
+        request_path_token = current_request_path.set("/compositions/{composition_job_id}/status")
         SSE_ACTIVE_CONNECTIONS.inc()
         try:
             while True:
@@ -152,5 +154,6 @@ async def stream_composition_status(
                 await asyncio.sleep(2)
         finally:
             SSE_ACTIVE_CONNECTIONS.dec()
+            current_request_path.reset(request_path_token)
 
     return StreamingResponse(event_generator(), media_type="text/event-stream")

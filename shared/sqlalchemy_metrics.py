@@ -4,11 +4,13 @@ from sqlalchemy import Engine, event
 from sqlalchemy.engine import ExecutionContext
 
 from shared.metrics import (
+    DB_CONNECTION_HOLD_SECONDS,
     DB_POOL_CHECKED_OUT,
     DB_POOL_CHECKOUT_TOTAL,
     DB_QUERY_DURATION_SECONDS,
     DB_QUERY_TOTAL,
 )
+from shared.request_context import current_request_path
 
 
 def _operation(statement: str | None) -> str:
@@ -57,7 +59,15 @@ def register_sqlalchemy_metrics(engine: Engine) -> None:
     def checkout(dbapi_connection, connection_record, connection_proxy) -> None:
         DB_POOL_CHECKOUT_TOTAL.inc()
         DB_POOL_CHECKED_OUT.inc()
+        connection_record.info["gifgloo_checked_out_at"] = time.perf_counter()
+        connection_record.info["gifgloo_request_path"] = current_request_path.get()
 
     @event.listens_for(engine, "checkin")
     def checkin(dbapi_connection, connection_record) -> None:
         DB_POOL_CHECKED_OUT.dec()
+        checked_out_at = connection_record.info.pop("gifgloo_checked_out_at", None)
+        request_path = connection_record.info.pop("gifgloo_request_path", "unknown")
+        if checked_out_at is not None:
+            DB_CONNECTION_HOLD_SECONDS.labels(path=request_path).observe(
+                time.perf_counter() - checked_out_at
+            )
