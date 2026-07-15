@@ -1,7 +1,7 @@
 from fastapi import Depends
 from sqlalchemy.orm import Session
 
-from config.database import get_db
+from config.database import AsyncSessionLocal, get_db
 
 # --- User domain ---
 from user.adapter.outbound.persistence.sqlalchemy_user_repository import SqlAlchemyUserRepository
@@ -24,6 +24,9 @@ from asset.application.services.save_asset_service import SaveAssetService
 from composition.adapter.outbound.domain_bridges.user_verification_adapter import UserVerificationAdapter
 from composition.adapter.outbound.domain_bridges.credit_adapter import CreditAdapter
 from composition.adapter.outbound.domain_bridges.asset_save_adapter import AssetSaveAdapter
+from composition.adapter.outbound.persistence.sqlalchemy_async_composition_status_reader import (
+    SqlAlchemyAsyncCompositionStatusReader,
+)
 from composition.adapter.outbound.persistence.sqlalchemy_composition_repository import SqlAlchemyCompositionRepository
 from composition.adapter.outbound.aws.lambda_feasibility_check_adapter import LambdaFeasibilityCheckAdapter
 from composition.adapter.outbound.aws.r2_storage_adapter import R2StorageAdapter
@@ -68,15 +71,15 @@ def get_request_composition_service(db: Session = Depends(get_db)) -> RequestCom
     )
 
 
-def get_composition_status_service(db: Session = Depends(get_db)) -> GetCompositionStatusService:
-    return GetCompositionStatusService(
+def get_composition_list_service(db: Session = Depends(get_db, scope="function")) -> GetCompositionListService:
+    return GetCompositionListService(
         composition_repo=SqlAlchemyCompositionRepository(db),
     )
 
 
-def get_composition_list_service(db: Session = Depends(get_db)) -> GetCompositionListService:
-    return GetCompositionListService(
-        composition_repo=SqlAlchemyCompositionRepository(db),
+def get_composition_status_service() -> GetCompositionStatusService:
+    return GetCompositionStatusService(
+        status_reader=SqlAlchemyAsyncCompositionStatusReader(AsyncSessionLocal),
     )
 
 
