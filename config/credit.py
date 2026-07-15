@@ -9,7 +9,7 @@ from credit_account.adapter.outbound.user_verification import UserVerificationAd
 from credit_account.application.services.get_credit_balance_service import GetCreditBalanceService
 
 
-def get_credit_balance_service(db: Session = Depends(get_db)) -> GetCreditBalanceService:
+def get_credit_balance_service(db: Session = Depends(get_db, scope="function")) -> GetCreditBalanceService:
     return GetCreditBalanceService(
         user_verification=UserVerificationAdapter(VerifyUserService(SqlAlchemyUserRepository(db))),
         credit_account_repo=SqlAlchemyCreditAccountRepository(db),
