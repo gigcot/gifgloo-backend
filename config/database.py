@@ -13,7 +13,7 @@ engine = create_engine(
     pool_pre_ping=True,
     pool_recycle=1800,
 )
-register_sqlalchemy_metrics(engine)
+register_sqlalchemy_metrics(engine, pool="sync")
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
 async_engine = create_async_engine(
@@ -23,7 +23,7 @@ async_engine = create_async_engine(
     pool_pre_ping=True,
     pool_recycle=1800,
 )
-register_sqlalchemy_metrics(async_engine.sync_engine)
+register_sqlalchemy_metrics(async_engine.sync_engine, pool="async")
 AsyncSessionLocal = async_sessionmaker(
     bind=async_engine,
     autoflush=False,

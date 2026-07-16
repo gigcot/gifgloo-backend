@@ -93,15 +93,17 @@ DB_QUERY_DURATION_SECONDS = Histogram(
 DB_POOL_CHECKOUT_TOTAL = Counter(
     "db_pool_checkout_total",
     "Database pool checkouts.",
+    ["pool"],
 )
 DB_POOL_CHECKED_OUT = Gauge(
     "db_pool_checked_out",
     "Database connections currently checked out from the SQLAlchemy pool.",
+    ["pool"],
 )
 DB_CONNECTION_HOLD_SECONDS = Histogram(
     "db_connection_hold_seconds",
     "Time a database connection stayed checked out from the SQLAlchemy pool.",
-    ["path"],
+    ["pool", "path"],
 )
 
 

@@ -22,7 +22,10 @@ def _operation(statement: str | None) -> str:
     return parts[0].upper()
 
 
-def register_sqlalchemy_metrics(engine: Engine) -> None:
+def register_sqlalchemy_metrics(engine: Engine, pool: str) -> None:
+    DB_POOL_CHECKOUT_TOTAL.labels(pool=pool)
+    DB_POOL_CHECKED_OUT.labels(pool=pool).set(0)
+
     @event.listens_for(engine, "before_cursor_execute")
     def before_cursor_execute(
         conn,
@@ -57,17 +60,17 @@ def register_sqlalchemy_metrics(engine: Engine) -> None:
 
     @event.listens_for(engine, "checkout")
     def checkout(dbapi_connection, connection_record, connection_proxy) -> None:
-        DB_POOL_CHECKOUT_TOTAL.inc()
-        DB_POOL_CHECKED_OUT.inc()
+        DB_POOL_CHECKOUT_TOTAL.labels(pool=pool).inc()
+        DB_POOL_CHECKED_OUT.labels(pool=pool).inc()
         connection_record.info["gifgloo_checked_out_at"] = time.perf_counter()
         connection_record.info["gifgloo_request_path"] = current_request_path.get()
 
     @event.listens_for(engine, "checkin")
     def checkin(dbapi_connection, connection_record) -> None:
-        DB_POOL_CHECKED_OUT.dec()
+        DB_POOL_CHECKED_OUT.labels(pool=pool).dec()
         checked_out_at = connection_record.info.pop("gifgloo_checked_out_at", None)
         request_path = connection_record.info.pop("gifgloo_request_path", "unknown")
         if checked_out_at is not None:
-            DB_CONNECTION_HOLD_SECONDS.labels(path=request_path).observe(
+            DB_CONNECTION_HOLD_SECONDS.labels(pool=pool, path=request_path).observe(
                 time.perf_counter() - checked_out_at
             )
