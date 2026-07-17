@@ -81,6 +81,9 @@ LOADTEST_STATUS_TIMEOUT_SECONDS
 LOADTEST_CONFIRMATION_WEIGHT
 LOADTEST_FEASIBILITY_REJECT_WEIGHT
 LOADTEST_PIPELINE_FAIL_STAGE
+LOADTEST_PUSHGATEWAY_URL
+LOADTEST_PUSHGATEWAY_INTERVAL_SECONDS
+LOADTEST_RUN_ID
 ```
 
 로컬에서 Locust를 실행하고 EC2에서 reset/seed/verify를 수행하려면:
@@ -103,6 +106,27 @@ EC2 seed.py
 EC2 token CSV -> local scp
 local locust
 EC2 verify_credit_consistency.py
+```
+
+## Live Locust metrics
+
+EC2 monitoring stack의 Pushgateway를 SSH tunnel로 연결한다.
+
+```bash
+ssh -N \
+  -L 3000:127.0.0.1:3000 \
+  -L 9090:127.0.0.1:9090 \
+  -L 9091:127.0.0.1:9091 \
+  gifgloo-loadtest
+```
+
+`run_remote_loadtest.sh`는 기본적으로 `http://127.0.0.1:9091`에 5초마다
+현재 users, RPS, failure, 평균 및 p50/p95/p99/max 응답시간을 보낸다.
+`Aggregated`는 SSE 대기 합성 이벤트를 포함하며, `HTTP Aggregated`는 실제 HTTP 요청만 집계한다.
+Pushgateway 전송 없이 실행하려면 빈 값을 명시한다.
+
+```bash
+LOADTEST_PUSHGATEWAY_URL= ./load_test/run_remote_loadtest.sh
 ```
 
 ## Credit consistency

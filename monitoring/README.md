@@ -14,6 +14,16 @@ Grafana는 기본적으로 `127.0.0.1:3000`에만 바인딩한다. EC2에서는 
 ssh -L 3000:127.0.0.1:3000 <ec2>
 ```
 
+로컬 Locust 실시간 지표까지 전달하려면 Pushgateway 포트를 함께 연결한다.
+
+```bash
+ssh -N \
+  -L 3000:127.0.0.1:3000 \
+  -L 9090:127.0.0.1:9090 \
+  -L 9091:127.0.0.1:9091 \
+  <ec2>
+```
+
 ## Targets
 
 Prometheus scrape 대상:
@@ -23,6 +33,7 @@ node-exporter:9100
 postgres-exporter:9187
 nginx-exporter:9113
 host.docker.internal:8001/metrics
+pushgateway:9091
 ```
 
 `nginx-exporter`는 host의 `http://127.0.0.1:8080/nginx_status`에 대응되는
@@ -36,6 +47,7 @@ nginx 설정 경로에 복사한 뒤 `nginx -t`로 검증하고 reload한다.
 ```text
 3000 Grafana      127.0.0.1 only
 9090 Prometheus   127.0.0.1 only
+9091 Pushgateway  127.0.0.1 only
 3100 Loki         127.0.0.1 only
 9100 node         127.0.0.1 only
 9187 postgres     127.0.0.1 only

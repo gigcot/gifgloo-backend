@@ -12,6 +12,8 @@ from locust import HttpUser, between, task
 
 load_dotenv(".env.loadtest")
 
+import load_test.locust_pushgateway  # noqa: E402,F401
+
 TOKEN_CSV = Path(os.environ["LOADTEST_TOKEN_OUTPUT_PATH"])
 TARGET_IMAGE = Path(os.environ["LOADTEST_TARGET_IMAGE_PATH"])
 GIF_URL = os.environ["LOADTEST_GIF_URL"]

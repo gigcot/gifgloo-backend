@@ -26,11 +26,20 @@ LOADTEST_REMOTE_PYTHON="${LOADTEST_REMOTE_PYTHON:-${LOADTEST_REMOTE_DIR}/venv/bi
 LOADTEST_REMOTE_API_HOST="${LOADTEST_REMOTE_API_HOST:-0.0.0.0}"
 LOADTEST_REMOTE_API_PORT="${LOADTEST_REMOTE_API_PORT:-8001}"
 LOADTEST_REMOTE_API_LOG="${LOADTEST_REMOTE_API_LOG:-/var/log/gifgloo/loadtest-api.log}"
+LOADTEST_REMOTE_API_SERVICE="${LOADTEST_REMOTE_API_SERVICE:-gifgloo-loadtest-api}"
 LOADTEST_GRAFANA_URL="${LOADTEST_GRAFANA_URL:-http://127.0.0.1:3000}"
+LOADTEST_PUSHGATEWAY_URL="${LOADTEST_PUSHGATEWAY_URL-http://127.0.0.1:9091}"
+LOADTEST_PUSHGATEWAY_INTERVAL_SECONDS="${LOADTEST_PUSHGATEWAY_INTERVAL_SECONDS:-5}"
 
 timestamp="$(date +%Y%m%d_%H%M%S)"
+LOADTEST_RUN_ID="${LOADTEST_RUN_ID:-${timestamp}_${LOADTEST_USERS}u}"
 result_dir="load_test/results/${LOADTEST_PROFILE}/${timestamp}_${LOADTEST_USERS}u"
 mkdir -p "$(dirname "$LOADTEST_TOKEN_OUTPUT_PATH")" "$result_dir"
+
+export LOADTEST_PROFILE
+export LOADTEST_PUSHGATEWAY_INTERVAL_SECONDS
+export LOADTEST_PUSHGATEWAY_URL
+export LOADTEST_RUN_ID
 
 if [[ "$LOADTEST_TOKEN_OUTPUT_PATH" = /* ]]; then
   remote_token_path="$LOADTEST_TOKEN_OUTPUT_PATH"
@@ -38,18 +47,26 @@ else
   remote_token_path="${LOADTEST_REMOTE_DIR}/${LOADTEST_TOKEN_OUTPUT_PATH}"
 fi
 
-echo "[1/6] remote reset and seed"
+echo "[1/7] pushgateway readiness"
+if [[ -n "$LOADTEST_PUSHGATEWAY_URL" ]]; then
+  curl --max-time 5 -fsS "${LOADTEST_PUSHGATEWAY_URL%/}/-/ready" > /dev/null
+else
+  echo "Locust Pushgateway reporting is disabled"
+fi
+
+echo "[2/7] remote reset and seed"
 ssh "$LOADTEST_EC2_HOST" "cd ${LOADTEST_REMOTE_DIR} && ${LOADTEST_REMOTE_PYTHON} load_test/reset.py && ${LOADTEST_REMOTE_PYTHON} load_test/seed.py"
 
-echo "[2/6] remote restart api"
-ssh "$LOADTEST_EC2_HOST" "cd ${LOADTEST_REMOTE_DIR} && sudo mkdir -p \"\$(dirname ${LOADTEST_REMOTE_API_LOG})\" && sudo chown \"\$(id -u):\$(id -g)\" \"\$(dirname ${LOADTEST_REMOTE_API_LOG})\" && (lsof -ti tcp:${LOADTEST_REMOTE_API_PORT} | xargs -r kill -9 || true) && (nohup ${LOADTEST_REMOTE_PYTHON} -m uvicorn main:app --host ${LOADTEST_REMOTE_API_HOST} --port ${LOADTEST_REMOTE_API_PORT} > ${LOADTEST_REMOTE_API_LOG} 2>&1 < /dev/null &) && sleep 2 && curl --max-time 10 -fsS http://127.0.0.1:${LOADTEST_REMOTE_API_PORT}/metrics > /dev/null"
+echo "[3/7] remote restart api"
+ssh "$LOADTEST_EC2_HOST" "cd ${LOADTEST_REMOTE_DIR} && sudo systemctl restart ${LOADTEST_REMOTE_API_SERVICE} && sleep 2 && if ! sudo systemctl is-active --quiet ${LOADTEST_REMOTE_API_SERVICE}; then sudo systemctl status ${LOADTEST_REMOTE_API_SERVICE} --no-pager -l; exit 1; fi && main_pid=\"\$(systemctl show -p MainPID --value ${LOADTEST_REMOTE_API_SERVICE})\" && listen_pids=\"\$(lsof -ti tcp:${LOADTEST_REMOTE_API_PORT} -sTCP:LISTEN || true)\" && if ! printf '%s\n' \"\${listen_pids}\" | grep -qx \"\${main_pid}\"; then echo \"${LOADTEST_REMOTE_API_SERVICE} main pid does not own port ${LOADTEST_REMOTE_API_PORT}\"; echo \"main_pid=\${main_pid}\"; sudo lsof -nP -iTCP:${LOADTEST_REMOTE_API_PORT} -sTCP:LISTEN || true; exit 1; fi && curl --max-time 10 -fsS http://127.0.0.1:${LOADTEST_REMOTE_API_PORT}/metrics > /dev/null"
 
-echo "[3/6] copy token csv from remote"
+echo "[4/7] copy token csv from remote"
 scp "${LOADTEST_EC2_HOST}:${remote_token_path}" "$LOADTEST_TOKEN_OUTPUT_PATH"
 
-echo "[4/6] run locust"
+echo "[5/7] run locust"
 loadtest_started_at="$(date +%s)"
 loadtest_started_at_ms="$((loadtest_started_at * 1000))"
+set +e
 locust -f load_test/locustfile.py \
   --host "$LOADTEST_LOCUST_HOST" \
   --users "$LOADTEST_USERS" \
@@ -59,6 +76,8 @@ locust -f load_test/locustfile.py \
   --headless \
   --html "${result_dir}/report.html" \
   --csv "${result_dir}/result"
+locust_exit_code=$?
+set -e
 loadtest_ended_at="$(date +%s)"
 loadtest_ended_at_ms="$((loadtest_ended_at * 1000))"
 
@@ -89,14 +108,17 @@ EOF
 printf "%s\n" "$run_prometheus_metrics" > "${result_dir}/loadtest_run.prom"
 printf "%s\n" "$run_prometheus_metrics" | ssh "$LOADTEST_EC2_HOST" "mkdir -p \"\$(dirname ${LOADTEST_REMOTE_RUN_PROM_OUTPUT})\" && cat > ${LOADTEST_REMOTE_RUN_PROM_OUTPUT}"
 
-echo "[5/6] remote credit consistency check"
+echo "[6/7] remote credit consistency check"
 ssh "$LOADTEST_EC2_HOST" "cd ${LOADTEST_REMOTE_DIR} && mkdir -p \"\$(dirname ${LOADTEST_REMOTE_PROM_OUTPUT})\" && ${LOADTEST_REMOTE_PYTHON} load_test/verify_credit_consistency.py --prometheus-output ${LOADTEST_REMOTE_PROM_OUTPUT}"
 
-echo "[6/6] done"
+echo "[7/7] done"
 echo "result_dir=${result_dir}"
 echo "credit_consistency_prom=${LOADTEST_REMOTE_PROM_OUTPUT}"
 echo "loadtest_run_prom=${LOADTEST_REMOTE_RUN_PROM_OUTPUT}"
+echo "locust_pushgateway=${LOADTEST_PUSHGATEWAY_URL:-disabled}"
+echo "loadtest_run_id=${LOADTEST_RUN_ID}"
 echo "remote_api_log=${LOADTEST_REMOTE_API_LOG}"
 echo "grafana_from=${loadtest_started_at_ms}"
 echo "grafana_to=${loadtest_ended_at_ms}"
 echo "grafana_url=${LOADTEST_GRAFANA_URL}/?from=${loadtest_started_at_ms}&to=${loadtest_ended_at_ms}"
+exit "$locust_exit_code"

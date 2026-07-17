@@ -28,3 +28,10 @@ scrape_configs:
     static_configs:
       - targets:
           - host.docker.internal:8001
+
+  - job_name: locust-pushgateway
+    scrape_interval: 5s
+    honor_labels: true
+    static_configs:
+      - targets:
+          - pushgateway:9091
