@@ -1,11 +1,24 @@
+import json
+import logging
 import time
 from collections.abc import Awaitable, Callable
+from datetime import datetime, timezone
 
 from fastapi import Request, Response
 from prometheus_client import CONTENT_TYPE_LATEST, Counter, Gauge, Histogram, generate_latest
 from starlette.responses import Response as StarletteResponse
 
 from shared.request_context import current_request_path
+
+
+request_timing_logger = logging.getLogger("gifgloo.request_timing")
+request_timing_logger.setLevel(logging.INFO)
+request_timing_logger.propagate = False
+
+if not request_timing_logger.handlers:
+    request_timing_handler = logging.StreamHandler()
+    request_timing_handler.setFormatter(logging.Formatter("%(message)s"))
+    request_timing_logger.addHandler(request_timing_handler)
 
 
 HTTP_REQUESTS_TOTAL = Counter(
@@ -129,6 +142,34 @@ def normalized_path(path: str) -> str:
     return path
 
 
+def log_loadtest_request(
+    request: Request,
+    path: str,
+    status: int,
+    started_at: datetime,
+    duration_seconds: float,
+) -> None:
+    loadtest_run_id = request.headers.get("X-Loadtest-Run-ID")
+    if not loadtest_run_id:
+        return
+
+    request_timing_logger.info(
+        json.dumps(
+            {
+                "event": "fastapi_request_completed",
+                "request_id": request.headers.get("X-Request-ID", ""),
+                "loadtest_run_id": loadtest_run_id,
+                "method": request.method,
+                "path": path,
+                "status": status,
+                "started_at": started_at.isoformat(),
+                "duration_seconds": round(duration_seconds, 6),
+            },
+            separators=(",", ":"),
+        )
+    )
+
+
 async def record_http_metrics(
     request: Request,
     call_next: Callable[[Request], Awaitable[StarletteResponse]],
@@ -141,13 +182,20 @@ async def record_http_metrics(
     request_path_token = current_request_path.set(in_progress_path)
     HTTP_REQUESTS_IN_PROGRESS.labels(method=method, path=in_progress_path).inc()
     started_at = time.perf_counter()
+    started_at_utc = datetime.now(timezone.utc)
     try:
         response = await call_next(request)
     except Exception:
         path = route_path(request)
+        duration_seconds = time.perf_counter() - started_at
         HTTP_REQUESTS_TOTAL.labels(method=method, path=path, status="500").inc()
-        HTTP_REQUEST_DURATION_SECONDS.labels(method=method, path=path).observe(
-            time.perf_counter() - started_at
+        HTTP_REQUEST_DURATION_SECONDS.labels(method=method, path=path).observe(duration_seconds)
+        log_loadtest_request(
+            request,
+            path,
+            500,
+            started_at_utc,
+            duration_seconds,
         )
         raise
     finally:
@@ -155,8 +203,14 @@ async def record_http_metrics(
         current_request_path.reset(request_path_token)
 
     path = route_path(request)
+    duration_seconds = time.perf_counter() - started_at
     HTTP_REQUESTS_TOTAL.labels(method=method, path=path, status=str(response.status_code)).inc()
-    HTTP_REQUEST_DURATION_SECONDS.labels(method=method, path=path).observe(
-        time.perf_counter() - started_at
+    HTTP_REQUEST_DURATION_SECONDS.labels(method=method, path=path).observe(duration_seconds)
+    log_loadtest_request(
+        request,
+        path,
+        response.status_code,
+        started_at_utc,
+        duration_seconds,
     )
     return response
