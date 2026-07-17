@@ -1696,12 +1696,12 @@
       },
       "targets": [
         {
-          "expr": "locust_users",
+          "expr": "locust_users{run_id=~\"$loadtest_run_id\"}",
           "legendFormat": "users {{profile}} {{run_id}}",
           "refId": "A"
         },
         {
-          "expr": "locust_test_running",
+          "expr": "locust_test_running{run_id=~\"$loadtest_run_id\"}",
           "legendFormat": "running",
           "refId": "B"
         }
@@ -1747,17 +1747,17 @@
       },
       "targets": [
         {
-          "expr": "locust_requests_per_second{name=\"HTTP Aggregated\"}",
+          "expr": "locust_requests_per_second{name=\"HTTP Aggregated\", run_id=~\"$loadtest_run_id\"}",
           "legendFormat": "HTTP requests",
           "refId": "A"
         },
         {
-          "expr": "locust_requests_per_second{name=\"Aggregated\"}",
+          "expr": "locust_requests_per_second{name=\"Aggregated\", run_id=~\"$loadtest_run_id\"}",
           "legendFormat": "all Locust events",
           "refId": "B"
         },
         {
-          "expr": "locust_failures_per_second{name=\"HTTP Aggregated\"}",
+          "expr": "locust_failures_per_second{name=\"HTTP Aggregated\", run_id=~\"$loadtest_run_id\"}",
           "legendFormat": "HTTP failures",
           "refId": "C"
         }
@@ -1803,22 +1803,22 @@
       },
       "targets": [
         {
-          "expr": "locust_response_time_average_seconds{name=\"HTTP Aggregated\"}",
+          "expr": "locust_response_time_average_seconds{name=\"HTTP Aggregated\", run_id=~\"$loadtest_run_id\"}",
           "legendFormat": "average",
           "refId": "A"
         },
         {
-          "expr": "locust_response_time_p95_seconds{name=\"HTTP Aggregated\"}",
+          "expr": "locust_response_time_p95_seconds{name=\"HTTP Aggregated\", run_id=~\"$loadtest_run_id\"}",
           "legendFormat": "p95",
           "refId": "B"
         },
         {
-          "expr": "locust_response_time_p99_seconds{name=\"HTTP Aggregated\"}",
+          "expr": "locust_response_time_p99_seconds{name=\"HTTP Aggregated\", run_id=~\"$loadtest_run_id\"}",
           "legendFormat": "p99",
           "refId": "C"
         },
         {
-          "expr": "locust_response_time_p95_seconds{name=\"Aggregated\"}",
+          "expr": "locust_response_time_p95_seconds{name=\"Aggregated\", run_id=~\"$loadtest_run_id\"}",
           "legendFormat": "all events p95",
           "refId": "D"
         }
@@ -1864,17 +1864,213 @@
       },
       "targets": [
         {
-          "expr": "locust_response_time_p95_seconds{name!~\"Aggregated|HTTP Aggregated\"}",
+          "expr": "locust_response_time_p95_seconds{name!~\"Aggregated|HTTP Aggregated\", run_id=~\"$loadtest_run_id\"}",
           "legendFormat": "p95 {{method}} {{name}}",
           "refId": "A"
         },
         {
-          "expr": "locust_response_time_p99_seconds{name!~\"Aggregated|HTTP Aggregated\"}",
+          "expr": "locust_response_time_p99_seconds{name!~\"Aggregated|HTTP Aggregated\", run_id=~\"$loadtest_run_id\"}",
           "legendFormat": "p99 {{method}} {{name}}",
           "refId": "B"
         }
       ],
       "title": "Locust End-to-End Latency by Request",
+      "type": "timeseries"
+    },
+    {
+      "datasource": "Loki",
+      "description": "Nginx access log 기반 p95/p99입니다. request_time은 Nginx 전체 시간이고, upstream 값은 FastAPI upstream 구간입니다.",
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "drawStyle": "line",
+            "fillOpacity": 10,
+            "lineInterpolation": "linear",
+            "lineWidth": 1,
+            "showPoints": "never"
+          },
+          "unit": "s"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 12,
+        "w": 12,
+        "x": 0,
+        "y": 120
+      },
+      "id": 36,
+      "options": {
+        "legend": {
+          "calcs": [
+            "lastNotNull",
+            "max"
+          ],
+          "displayMode": "table",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "none"
+        }
+      },
+      "targets": [
+        {
+          "expr": "quantile_over_time(0.95, {job=\"nginx-access\", source=\"loadtest\", loadtest_run_id=~\"$loadtest_run_id\"} | json | unwrap request_time | __error__=\"\" [1m])",
+          "legendFormat": "p95 request time",
+          "refId": "A"
+        },
+        {
+          "expr": "quantile_over_time(0.95, {job=\"nginx-access\", source=\"loadtest\", loadtest_run_id=~\"$loadtest_run_id\"} | json | unwrap upstream_connect_time | __error__=\"\" [1m])",
+          "legendFormat": "p95 upstream connect",
+          "refId": "B"
+        },
+        {
+          "expr": "quantile_over_time(0.95, {job=\"nginx-access\", source=\"loadtest\", loadtest_run_id=~\"$loadtest_run_id\"} | json | unwrap upstream_header_time | __error__=\"\" [1m])",
+          "legendFormat": "p95 upstream header",
+          "refId": "C"
+        },
+        {
+          "expr": "quantile_over_time(0.95, {job=\"nginx-access\", source=\"loadtest\", loadtest_run_id=~\"$loadtest_run_id\"} | json | unwrap upstream_response_time | __error__=\"\" [1m])",
+          "legendFormat": "p95 upstream response",
+          "refId": "D"
+        },
+        {
+          "expr": "quantile_over_time(0.99, {job=\"nginx-access\", source=\"loadtest\", loadtest_run_id=~\"$loadtest_run_id\"} | json | unwrap request_time | __error__=\"\" [1m])",
+          "legendFormat": "p99 request time",
+          "refId": "E"
+        },
+        {
+          "expr": "quantile_over_time(0.99, {job=\"nginx-access\", source=\"loadtest\", loadtest_run_id=~\"$loadtest_run_id\"} | json | unwrap upstream_connect_time | __error__=\"\" [1m])",
+          "legendFormat": "p99 upstream connect",
+          "refId": "F"
+        },
+        {
+          "expr": "quantile_over_time(0.99, {job=\"nginx-access\", source=\"loadtest\", loadtest_run_id=~\"$loadtest_run_id\"} | json | unwrap upstream_header_time | __error__=\"\" [1m])",
+          "legendFormat": "p99 upstream header",
+          "refId": "G"
+        },
+        {
+          "expr": "quantile_over_time(0.99, {job=\"nginx-access\", source=\"loadtest\", loadtest_run_id=~\"$loadtest_run_id\"} | json | unwrap upstream_response_time | __error__=\"\" [1m])",
+          "legendFormat": "p99 upstream response",
+          "refId": "H"
+        }
+      ],
+      "title": "Nginx Request / Upstream Timing",
+      "type": "timeseries"
+    },
+    {
+      "datasource": "-- Mixed --",
+      "description": "SSE status 스트림과 internal callback을 제외한 일반 HTTP p95/p99를 같은 테스트 시간대에 비교합니다. percentile 간 차이는 병목 후보를 찾기 위한 근사치이며, 한 요청의 정확한 시간 분해는 request_id 추적이 필요합니다.",
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "drawStyle": "line",
+            "fillOpacity": 10,
+            "lineInterpolation": "linear",
+            "lineWidth": 1,
+            "showPoints": "never"
+          },
+          "unit": "s"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 12,
+        "w": 12,
+        "x": 12,
+        "y": 120
+      },
+      "id": 37,
+      "options": {
+        "legend": {
+          "calcs": [
+            "lastNotNull",
+            "max"
+          ],
+          "displayMode": "table",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "none"
+        }
+      },
+      "targets": [
+        {
+          "datasource": "Prometheus",
+          "expr": "locust_response_time_p95_seconds{name=\"HTTP Aggregated\", run_id=~\"$loadtest_run_id\"}",
+          "legendFormat": "p95 Locust HTTP end-to-end",
+          "refId": "A"
+        },
+        {
+          "datasource": "Loki",
+          "expr": "quantile_over_time(0.95, {job=\"nginx-access\", source=\"loadtest\", loadtest_run_id=~\"$loadtest_run_id\"} | json | uri !~ \"^/compositions/.+/status$\" | unwrap request_time | __error__=\"\" [1m])",
+          "legendFormat": "p95 Nginx request time non-SSE",
+          "refId": "B"
+        },
+        {
+          "datasource": "Loki",
+          "expr": "quantile_over_time(0.95, {job=\"nginx-access\", source=\"loadtest\", loadtest_run_id=~\"$loadtest_run_id\"} | json | uri !~ \"^/compositions/.+/status$\" | unwrap upstream_response_time | __error__=\"\" [1m])",
+          "legendFormat": "p95 Nginx upstream response non-SSE",
+          "refId": "C"
+        },
+        {
+          "datasource": "Prometheus",
+          "expr": "histogram_quantile(0.95, sum by (le) (rate(http_request_duration_seconds_bucket{path!~\"/internal/.*|/compositions/.*/status\"}[1m])))",
+          "legendFormat": "p95 FastAPI public API non-SSE",
+          "refId": "D"
+        },
+        {
+          "datasource": "Prometheus",
+          "expr": "histogram_quantile(0.95, sum by (le) (rate(db_connection_hold_seconds_bucket{path!~\"/internal/.*|/compositions/.*/status\"}[1m])))",
+          "legendFormat": "p95 DB hold public API non-SSE",
+          "refId": "E"
+        },
+        {
+          "datasource": "Prometheus",
+          "expr": "histogram_quantile(0.95, sum by (le) (rate(db_query_duration_seconds_bucket[1m])))",
+          "legendFormat": "p95 DB query all paths",
+          "refId": "F"
+        },
+        {
+          "datasource": "Prometheus",
+          "expr": "locust_response_time_p99_seconds{name=\"HTTP Aggregated\", run_id=~\"$loadtest_run_id\"}",
+          "legendFormat": "p99 Locust HTTP end-to-end",
+          "refId": "G"
+        },
+        {
+          "datasource": "Loki",
+          "expr": "quantile_over_time(0.99, {job=\"nginx-access\", source=\"loadtest\", loadtest_run_id=~\"$loadtest_run_id\"} | json | uri !~ \"^/compositions/.+/status$\" | unwrap request_time | __error__=\"\" [1m])",
+          "legendFormat": "p99 Nginx request time non-SSE",
+          "refId": "H"
+        },
+        {
+          "datasource": "Loki",
+          "expr": "quantile_over_time(0.99, {job=\"nginx-access\", source=\"loadtest\", loadtest_run_id=~\"$loadtest_run_id\"} | json | uri !~ \"^/compositions/.+/status$\" | unwrap upstream_response_time | __error__=\"\" [1m])",
+          "legendFormat": "p99 Nginx upstream response non-SSE",
+          "refId": "I"
+        },
+        {
+          "datasource": "Prometheus",
+          "expr": "histogram_quantile(0.99, sum by (le) (rate(http_request_duration_seconds_bucket{path!~\"/internal/.*|/compositions/.*/status\"}[1m])))",
+          "legendFormat": "p99 FastAPI public API non-SSE",
+          "refId": "J"
+        },
+        {
+          "datasource": "Prometheus",
+          "expr": "histogram_quantile(0.99, sum by (le) (rate(db_connection_hold_seconds_bucket{path!~\"/internal/.*|/compositions/.*/status\"}[1m])))",
+          "legendFormat": "p99 DB hold public API non-SSE",
+          "refId": "K"
+        },
+        {
+          "datasource": "Prometheus",
+          "expr": "histogram_quantile(0.99, sum by (le) (rate(db_query_duration_seconds_bucket[1m])))",
+          "legendFormat": "p99 DB query all paths",
+          "refId": "L"
+        }
+      ],
+      "title": "Latency Chain",
       "type": "timeseries"
     }
   ],
@@ -1886,7 +2082,33 @@
     "loadtest"
   ],
   "templating": {
-    "list": []
+    "list": [
+      {
+        "allValue": ".*",
+        "current": {
+          "selected": true,
+          "text": "All",
+          "value": "$__all"
+        },
+        "datasource": "Prometheus",
+        "definition": "label_values(locust_users, run_id)",
+        "hide": 0,
+        "includeAll": true,
+        "label": "Loadtest Run",
+        "multi": false,
+        "name": "loadtest_run_id",
+        "options": [],
+        "query": {
+          "query": "label_values(locust_users, run_id)",
+          "refId": "PrometheusVariableQueryEditor-VariableQuery"
+        },
+        "refresh": 2,
+        "regex": "",
+        "skipUrlSync": false,
+        "sort": 2,
+        "type": "query"
+      }
+    ]
   },
   "time": {
     "from": "now-30m",

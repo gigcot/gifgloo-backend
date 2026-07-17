@@ -53,6 +53,9 @@ class GifglooLoadTestUser(HttpUser):
         token = next(TOKEN_ITERATOR)
         self.user_id = token["user_id"]
         self.client.cookies.set("user_token", token["user_token"].strip())
+        self.client.headers.update(
+            {"X-Loadtest-Run-ID": os.environ.get("LOADTEST_RUN_ID", "direct")}
+        )
 
     @task(HOME_PAGE_WEIGHT)
     def home_page_load(self) -> None:

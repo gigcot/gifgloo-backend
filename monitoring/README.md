@@ -39,6 +39,11 @@ pushgateway:9091
 `nginx-exporter`는 host의 `http://127.0.0.1:8080/nginx_status`에 대응되는
 `http://host.docker.internal:8080/nginx_status`를 scrape한다.
 
+Nginx access log는 Loki에서 `request_time`, `upstream_connect_time`,
+`upstream_header_time`, `upstream_response_time`을 LogQL p95/p99로 계산한다.
+Locust 요청의 `X-Loadtest-Run-ID`는 `loadtest_run_id` Loki label로 보존되어
+대시보드의 테스트 실행 선택에 사용된다.
+
 nginx 예시는 `monitoring/nginx/loadtest.example.conf`에 있다. 실제 EC2에서는
 nginx 설정 경로에 복사한 뒤 `nginx -t`로 검증하고 reload한다.
 

@@ -123,6 +123,8 @@ ssh -N \
 `run_remote_loadtest.sh`는 기본적으로 `http://127.0.0.1:9091`에 5초마다
 현재 users, RPS, failure, 평균 및 p50/p95/p99/max 응답시간을 보낸다.
 `Aggregated`는 SSE 대기 합성 이벤트를 포함하며, `HTTP Aggregated`는 실제 HTTP 요청만 집계한다.
+모든 Locust 요청에는 `X-Loadtest-Run-ID`를 넣어 Nginx access log에서 같은 테스트의
+`request_time`과 `upstream_response_time`을 분리해 확인한다.
 Pushgateway 전송 없이 실행하려면 빈 값을 명시한다.
 
 ```bash
