@@ -1916,42 +1916,42 @@
       },
       "targets": [
         {
-          "expr": "quantile_over_time(0.95, {job=\"nginx-access\", source=\"loadtest\", loadtest_run_id=~\"$loadtest_run_id\"} | json | unwrap request_time | __error__=\"\" [1m])",
+          "expr": "quantile_over_time(0.95, {job=\"nginx-access\", source=\"loadtest\", loadtest_run_id=~\"$loadtest_run_id\"} | json request_time=\"request_time\" | unwrap request_time | __error__=\"\" [1m])",
           "legendFormat": "p95 request time",
           "refId": "A"
         },
         {
-          "expr": "quantile_over_time(0.95, {job=\"nginx-access\", source=\"loadtest\", loadtest_run_id=~\"$loadtest_run_id\"} | json | unwrap upstream_connect_time | __error__=\"\" [1m])",
+          "expr": "quantile_over_time(0.95, {job=\"nginx-access\", source=\"loadtest\", loadtest_run_id=~\"$loadtest_run_id\"} | json upstream_connect_time=\"upstream_connect_time\" | unwrap upstream_connect_time | __error__=\"\" [1m])",
           "legendFormat": "p95 upstream connect",
           "refId": "B"
         },
         {
-          "expr": "quantile_over_time(0.95, {job=\"nginx-access\", source=\"loadtest\", loadtest_run_id=~\"$loadtest_run_id\"} | json | unwrap upstream_header_time | __error__=\"\" [1m])",
+          "expr": "quantile_over_time(0.95, {job=\"nginx-access\", source=\"loadtest\", loadtest_run_id=~\"$loadtest_run_id\"} | json upstream_header_time=\"upstream_header_time\" | unwrap upstream_header_time | __error__=\"\" [1m])",
           "legendFormat": "p95 upstream header",
           "refId": "C"
         },
         {
-          "expr": "quantile_over_time(0.95, {job=\"nginx-access\", source=\"loadtest\", loadtest_run_id=~\"$loadtest_run_id\"} | json | unwrap upstream_response_time | __error__=\"\" [1m])",
+          "expr": "quantile_over_time(0.95, {job=\"nginx-access\", source=\"loadtest\", loadtest_run_id=~\"$loadtest_run_id\"} | json upstream_response_time=\"upstream_response_time\" | unwrap upstream_response_time | __error__=\"\" [1m])",
           "legendFormat": "p95 upstream response",
           "refId": "D"
         },
         {
-          "expr": "quantile_over_time(0.99, {job=\"nginx-access\", source=\"loadtest\", loadtest_run_id=~\"$loadtest_run_id\"} | json | unwrap request_time | __error__=\"\" [1m])",
+          "expr": "quantile_over_time(0.99, {job=\"nginx-access\", source=\"loadtest\", loadtest_run_id=~\"$loadtest_run_id\"} | json request_time=\"request_time\" | unwrap request_time | __error__=\"\" [1m])",
           "legendFormat": "p99 request time",
           "refId": "E"
         },
         {
-          "expr": "quantile_over_time(0.99, {job=\"nginx-access\", source=\"loadtest\", loadtest_run_id=~\"$loadtest_run_id\"} | json | unwrap upstream_connect_time | __error__=\"\" [1m])",
+          "expr": "quantile_over_time(0.99, {job=\"nginx-access\", source=\"loadtest\", loadtest_run_id=~\"$loadtest_run_id\"} | json upstream_connect_time=\"upstream_connect_time\" | unwrap upstream_connect_time | __error__=\"\" [1m])",
           "legendFormat": "p99 upstream connect",
           "refId": "F"
         },
         {
-          "expr": "quantile_over_time(0.99, {job=\"nginx-access\", source=\"loadtest\", loadtest_run_id=~\"$loadtest_run_id\"} | json | unwrap upstream_header_time | __error__=\"\" [1m])",
+          "expr": "quantile_over_time(0.99, {job=\"nginx-access\", source=\"loadtest\", loadtest_run_id=~\"$loadtest_run_id\"} | json upstream_header_time=\"upstream_header_time\" | unwrap upstream_header_time | __error__=\"\" [1m])",
           "legendFormat": "p99 upstream header",
           "refId": "G"
         },
         {
-          "expr": "quantile_over_time(0.99, {job=\"nginx-access\", source=\"loadtest\", loadtest_run_id=~\"$loadtest_run_id\"} | json | unwrap upstream_response_time | __error__=\"\" [1m])",
+          "expr": "quantile_over_time(0.99, {job=\"nginx-access\", source=\"loadtest\", loadtest_run_id=~\"$loadtest_run_id\"} | json upstream_response_time=\"upstream_response_time\" | unwrap upstream_response_time | __error__=\"\" [1m])",
           "legendFormat": "p99 upstream response",
           "refId": "H"
         }
@@ -2005,13 +2005,13 @@
         },
         {
           "datasource": "Loki",
-          "expr": "quantile_over_time(0.95, {job=\"nginx-access\", source=\"loadtest\", loadtest_run_id=~\"$loadtest_run_id\"} | json | uri !~ \"^/compositions/.+/status$\" | unwrap request_time | __error__=\"\" [1m])",
+          "expr": "quantile_over_time(0.95, {job=\"nginx-access\", source=\"loadtest\", loadtest_run_id=~\"$loadtest_run_id\"} | json uri=\"uri\", request_time=\"request_time\" | uri !~ \"^/compositions/.+/status$\" | unwrap request_time | __error__=\"\" [1m])",
           "legendFormat": "p95 Nginx request time non-SSE",
           "refId": "B"
         },
         {
           "datasource": "Loki",
-          "expr": "quantile_over_time(0.95, {job=\"nginx-access\", source=\"loadtest\", loadtest_run_id=~\"$loadtest_run_id\"} | json | uri !~ \"^/compositions/.+/status$\" | unwrap upstream_response_time | __error__=\"\" [1m])",
+          "expr": "quantile_over_time(0.95, {job=\"nginx-access\", source=\"loadtest\", loadtest_run_id=~\"$loadtest_run_id\"} | json uri=\"uri\", upstream_response_time=\"upstream_response_time\" | uri !~ \"^/compositions/.+/status$\" | unwrap upstream_response_time | __error__=\"\" [1m])",
           "legendFormat": "p95 Nginx upstream response non-SSE",
           "refId": "C"
         },
@@ -2041,13 +2041,13 @@
         },
         {
           "datasource": "Loki",
-          "expr": "quantile_over_time(0.99, {job=\"nginx-access\", source=\"loadtest\", loadtest_run_id=~\"$loadtest_run_id\"} | json | uri !~ \"^/compositions/.+/status$\" | unwrap request_time | __error__=\"\" [1m])",
+          "expr": "quantile_over_time(0.99, {job=\"nginx-access\", source=\"loadtest\", loadtest_run_id=~\"$loadtest_run_id\"} | json uri=\"uri\", request_time=\"request_time\" | uri !~ \"^/compositions/.+/status$\" | unwrap request_time | __error__=\"\" [1m])",
           "legendFormat": "p99 Nginx request time non-SSE",
           "refId": "H"
         },
         {
           "datasource": "Loki",
-          "expr": "quantile_over_time(0.99, {job=\"nginx-access\", source=\"loadtest\", loadtest_run_id=~\"$loadtest_run_id\"} | json | uri !~ \"^/compositions/.+/status$\" | unwrap upstream_response_time | __error__=\"\" [1m])",
+          "expr": "quantile_over_time(0.99, {job=\"nginx-access\", source=\"loadtest\", loadtest_run_id=~\"$loadtest_run_id\"} | json uri=\"uri\", upstream_response_time=\"upstream_response_time\" | uri !~ \"^/compositions/.+/status$\" | unwrap upstream_response_time | __error__=\"\" [1m])",
           "legendFormat": "p99 Nginx upstream response non-SSE",
           "refId": "I"
         },
