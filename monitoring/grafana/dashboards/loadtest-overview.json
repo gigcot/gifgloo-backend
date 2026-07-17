@@ -2005,13 +2005,13 @@
         },
         {
           "datasource": "Loki",
-          "expr": "quantile_over_time(0.95, {job=\"nginx-access\", source=\"loadtest\", loadtest_run_id=~\"$loadtest_run_id\"} | json uri=\"uri\", request_time=\"request_time\" | uri !~ \"^/compositions/.+/status$\" | unwrap request_time | __error__=\"\" [1m])",
+          "expr": "quantile_over_time(0.95, {job=\"nginx-access\", source=\"loadtest\", loadtest_run_id=~\"$loadtest_run_id\"} | json uri=\"uri\", request_time=\"request_time\" | uri !~ \"^/internal/.*|^/compositions/.+/status$\" | unwrap request_time | __error__=\"\" [1m])",
           "legendFormat": "p95 Nginx request time non-SSE",
           "refId": "B"
         },
         {
           "datasource": "Loki",
-          "expr": "quantile_over_time(0.95, {job=\"nginx-access\", source=\"loadtest\", loadtest_run_id=~\"$loadtest_run_id\"} | json uri=\"uri\", upstream_response_time=\"upstream_response_time\" | uri !~ \"^/compositions/.+/status$\" | unwrap upstream_response_time | __error__=\"\" [1m])",
+          "expr": "quantile_over_time(0.95, {job=\"nginx-access\", source=\"loadtest\", loadtest_run_id=~\"$loadtest_run_id\"} | json uri=\"uri\", upstream_response_time=\"upstream_response_time\" | uri !~ \"^/internal/.*|^/compositions/.+/status$\" | unwrap upstream_response_time | __error__=\"\" [1m])",
           "legendFormat": "p95 Nginx upstream response non-SSE",
           "refId": "C"
         },
@@ -2020,6 +2020,12 @@
           "expr": "histogram_quantile(0.95, sum by (le) (rate(http_request_duration_seconds_bucket{path!~\"/internal/.*|/compositions/.*/status\"}[1m])))",
           "legendFormat": "p95 FastAPI public API non-SSE",
           "refId": "D"
+        },
+        {
+          "datasource": "Prometheus",
+          "expr": "histogram_quantile(0.95, sum by (le) (rate(http_pre_app_wait_seconds_bucket{path!~\"/internal/.*|/compositions/.*/status\"}[1m])))",
+          "legendFormat": "p95 Nginx to FastAPI start wait non-SSE",
+          "refId": "M"
         },
         {
           "datasource": "Prometheus",
@@ -2041,13 +2047,13 @@
         },
         {
           "datasource": "Loki",
-          "expr": "quantile_over_time(0.99, {job=\"nginx-access\", source=\"loadtest\", loadtest_run_id=~\"$loadtest_run_id\"} | json uri=\"uri\", request_time=\"request_time\" | uri !~ \"^/compositions/.+/status$\" | unwrap request_time | __error__=\"\" [1m])",
+          "expr": "quantile_over_time(0.99, {job=\"nginx-access\", source=\"loadtest\", loadtest_run_id=~\"$loadtest_run_id\"} | json uri=\"uri\", request_time=\"request_time\" | uri !~ \"^/internal/.*|^/compositions/.+/status$\" | unwrap request_time | __error__=\"\" [1m])",
           "legendFormat": "p99 Nginx request time non-SSE",
           "refId": "H"
         },
         {
           "datasource": "Loki",
-          "expr": "quantile_over_time(0.99, {job=\"nginx-access\", source=\"loadtest\", loadtest_run_id=~\"$loadtest_run_id\"} | json uri=\"uri\", upstream_response_time=\"upstream_response_time\" | uri !~ \"^/compositions/.+/status$\" | unwrap upstream_response_time | __error__=\"\" [1m])",
+          "expr": "quantile_over_time(0.99, {job=\"nginx-access\", source=\"loadtest\", loadtest_run_id=~\"$loadtest_run_id\"} | json uri=\"uri\", upstream_response_time=\"upstream_response_time\" | uri !~ \"^/internal/.*|^/compositions/.+/status$\" | unwrap upstream_response_time | __error__=\"\" [1m])",
           "legendFormat": "p99 Nginx upstream response non-SSE",
           "refId": "I"
         },
@@ -2056,6 +2062,12 @@
           "expr": "histogram_quantile(0.99, sum by (le) (rate(http_request_duration_seconds_bucket{path!~\"/internal/.*|/compositions/.*/status\"}[1m])))",
           "legendFormat": "p99 FastAPI public API non-SSE",
           "refId": "J"
+        },
+        {
+          "datasource": "Prometheus",
+          "expr": "histogram_quantile(0.99, sum by (le) (rate(http_pre_app_wait_seconds_bucket{path!~\"/internal/.*|/compositions/.*/status\"}[1m])))",
+          "legendFormat": "p99 Nginx to FastAPI start wait non-SSE",
+          "refId": "N"
         },
         {
           "datasource": "Prometheus",

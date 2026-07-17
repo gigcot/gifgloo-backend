@@ -31,6 +31,12 @@ HTTP_REQUEST_DURATION_SECONDS = Histogram(
     "HTTP request duration in seconds.",
     ["method", "path"],
 )
+HTTP_PRE_APP_WAIT_SECONDS = Histogram(
+    "http_pre_app_wait_seconds",
+    "Time from Nginx proxy dispatch until FastAPI middleware starts for loadtest requests.",
+    ["method", "path"],
+    buckets=(0.001, 0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1, 2, 3, 5, 10, 20),
+)
 HTTP_REQUESTS_IN_PROGRESS = Gauge(
     "http_requests_in_progress",
     "HTTP requests currently in progress.",
@@ -148,26 +154,25 @@ def log_loadtest_request(
     status: int,
     started_at: datetime,
     duration_seconds: float,
+    pre_app_wait_seconds: float | None,
 ) -> None:
     loadtest_run_id = request.headers.get("X-Loadtest-Run-ID")
     if not loadtest_run_id:
         return
 
-    request_timing_logger.info(
-        json.dumps(
-            {
-                "event": "fastapi_request_completed",
-                "request_id": request.headers.get("X-Request-ID", ""),
-                "loadtest_run_id": loadtest_run_id,
-                "method": request.method,
-                "path": path,
-                "status": status,
-                "started_at": started_at.isoformat(),
-                "duration_seconds": round(duration_seconds, 6),
-            },
-            separators=(",", ":"),
-        )
-    )
+    payload = {
+        "event": "fastapi_request_completed",
+        "request_id": request.headers.get("X-Request-ID", ""),
+        "loadtest_run_id": loadtest_run_id,
+        "method": request.method,
+        "path": path,
+        "status": status,
+        "started_at": started_at.isoformat(),
+        "duration_seconds": round(duration_seconds, 6),
+    }
+    if pre_app_wait_seconds is not None:
+        payload["pre_app_wait_seconds"] = round(pre_app_wait_seconds, 6)
+    request_timing_logger.info(json.dumps(payload, separators=(",", ":")))
 
 
 async def record_http_metrics(
@@ -183,6 +188,13 @@ async def record_http_metrics(
     HTTP_REQUESTS_IN_PROGRESS.labels(method=method, path=in_progress_path).inc()
     started_at = time.perf_counter()
     started_at_utc = datetime.now(timezone.utc)
+    pre_app_wait_seconds = None
+    nginx_upstream_start = request.headers.get("X-Nginx-Upstream-Start")
+    if request.headers.get("X-Loadtest-Run-ID") and nginx_upstream_start:
+        pre_app_wait_seconds = max(0.0, time.time() - float(nginx_upstream_start))
+        HTTP_PRE_APP_WAIT_SECONDS.labels(method=method, path=in_progress_path).observe(
+            pre_app_wait_seconds
+        )
     try:
         response = await call_next(request)
     except Exception:
@@ -196,6 +208,7 @@ async def record_http_metrics(
             500,
             started_at_utc,
             duration_seconds,
+            pre_app_wait_seconds,
         )
         raise
     finally:
@@ -212,5 +225,6 @@ async def record_http_metrics(
         response.status_code,
         started_at_utc,
         duration_seconds,
+        pre_app_wait_seconds,
     )
     return response
