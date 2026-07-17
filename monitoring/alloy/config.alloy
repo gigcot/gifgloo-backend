@@ -36,7 +36,23 @@ local.file_match "app" {
 
 loki.source.file "app" {
   targets    = local.file_match.app.targets
+  forward_to = [loki.process.app.receiver]
+}
+
+loki.process "app" {
   forward_to = [loki.write.default.receiver]
+
+  stage.json {
+    expressions = {
+      "loadtest_run_id" = "",
+    }
+  }
+
+  stage.labels {
+    values = {
+      "loadtest_run_id" = "",
+    }
+  }
 }
 
 local.file_match "postgres" {
