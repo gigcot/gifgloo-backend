@@ -2084,6 +2084,108 @@
       ],
       "title": "Latency Chain",
       "type": "timeseries"
+    },
+    {
+      "datasource": "-- Mixed --",
+      "description": "POST /compositions만 대상으로 Locust, Nginx, FastAPI, FastAPI 시작 전 대기, async DB connection hold를 비교합니다. 각 percentile은 독립 표본이므로 합산값이 아닌 병목 위치 확인용입니다.",
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "drawStyle": "line",
+            "fillOpacity": 10,
+            "lineInterpolation": "linear",
+            "lineWidth": 1,
+            "showPoints": "never"
+          },
+          "unit": "s"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 12,
+        "w": 24,
+        "x": 0,
+        "y": 132
+      },
+      "id": 38,
+      "options": {
+        "legend": {
+          "calcs": [
+            "lastNotNull",
+            "max"
+          ],
+          "displayMode": "table",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "none"
+        }
+      },
+      "targets": [
+        {
+          "datasource": "Prometheus",
+          "expr": "locust_response_time_p95_seconds{name=\"POST /compositions\", run_id=~\"$loadtest_run_id\"}",
+          "legendFormat": "p95 Locust POST end-to-end",
+          "refId": "A"
+        },
+        {
+          "datasource": "Loki",
+          "expr": "quantile_over_time(0.95, {job=\"nginx-access\", source=\"loadtest\", loadtest_run_id=~\"$loadtest_run_id\"} | json uri=\"uri\", request_time=\"request_time\" | uri=\"/compositions\" | unwrap request_time | __error__=\"\" [1m])",
+          "legendFormat": "p95 Nginx POST request time",
+          "refId": "B"
+        },
+        {
+          "datasource": "Prometheus",
+          "expr": "histogram_quantile(0.95, sum by (le) (rate(http_request_duration_seconds_bucket{method=\"POST\", path=\"/compositions\"}[1m])))",
+          "legendFormat": "p95 FastAPI POST processing",
+          "refId": "C"
+        },
+        {
+          "datasource": "Prometheus",
+          "expr": "histogram_quantile(0.95, sum by (le) (rate(http_pre_app_wait_seconds_bucket{method=\"POST\", path=\"/compositions\"}[1m])))",
+          "legendFormat": "p95 Nginx to FastAPI start wait",
+          "refId": "D"
+        },
+        {
+          "datasource": "Prometheus",
+          "expr": "histogram_quantile(0.95, sum by (le) (rate(db_connection_hold_seconds_bucket{pool=\"async\", path=\"/compositions\"}[1m])))",
+          "legendFormat": "p95 async DB hold",
+          "refId": "E"
+        },
+        {
+          "datasource": "Prometheus",
+          "expr": "locust_response_time_p99_seconds{name=\"POST /compositions\", run_id=~\"$loadtest_run_id\"}",
+          "legendFormat": "p99 Locust POST end-to-end",
+          "refId": "F"
+        },
+        {
+          "datasource": "Loki",
+          "expr": "quantile_over_time(0.99, {job=\"nginx-access\", source=\"loadtest\", loadtest_run_id=~\"$loadtest_run_id\"} | json uri=\"uri\", request_time=\"request_time\" | uri=\"/compositions\" | unwrap request_time | __error__=\"\" [1m])",
+          "legendFormat": "p99 Nginx POST request time",
+          "refId": "G"
+        },
+        {
+          "datasource": "Prometheus",
+          "expr": "histogram_quantile(0.99, sum by (le) (rate(http_request_duration_seconds_bucket{method=\"POST\", path=\"/compositions\"}[1m])))",
+          "legendFormat": "p99 FastAPI POST processing",
+          "refId": "H"
+        },
+        {
+          "datasource": "Prometheus",
+          "expr": "histogram_quantile(0.99, sum by (le) (rate(http_pre_app_wait_seconds_bucket{method=\"POST\", path=\"/compositions\"}[1m])))",
+          "legendFormat": "p99 Nginx to FastAPI start wait",
+          "refId": "I"
+        },
+        {
+          "datasource": "Prometheus",
+          "expr": "histogram_quantile(0.99, sum by (le) (rate(db_connection_hold_seconds_bucket{pool=\"async\", path=\"/compositions\"}[1m])))",
+          "legendFormat": "p99 async DB hold",
+          "refId": "J"
+        }
+      ],
+      "title": "POST /compositions Async Latency Breakdown",
+      "type": "timeseries"
     }
   ],
   "refresh": "5s",
