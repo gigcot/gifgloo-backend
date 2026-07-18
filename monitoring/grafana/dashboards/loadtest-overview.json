@@ -2300,6 +2300,100 @@
       ],
       "title": "FastAPI Threadpool Tokens",
       "type": "timeseries"
+    },
+    {
+      "datasource": "Prometheus",
+      "description": "단일 Uvicorn 프로세스의 CPU 사용률입니다. 100%는 vCPU 한 코어를 계속 사용한다는 뜻입니다.",
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "drawStyle": "line",
+            "fillOpacity": 10,
+            "lineInterpolation": "linear",
+            "lineWidth": 1,
+            "showPoints": "never"
+          },
+          "unit": "percent"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 152
+      },
+      "id": 41,
+      "options": {
+        "legend": {
+          "calcs": [
+            "lastNotNull",
+            "max"
+          ],
+          "displayMode": "table",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "single",
+          "sort": "none"
+        }
+      },
+      "targets": [
+        {
+          "expr": "rate(process_cpu_seconds_total{job=\"fastapi-loadtest\"}[1m]) * 100",
+          "legendFormat": "FastAPI process CPU",
+          "refId": "A"
+        }
+      ],
+      "title": "FastAPI Process CPU",
+      "type": "timeseries"
+    },
+    {
+      "datasource": "Prometheus",
+      "description": "단일 Uvicorn 프로세스의 resident set size(RSS)입니다. 운영체제가 실제 메모리에 유지하는 크기입니다.",
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "drawStyle": "line",
+            "fillOpacity": 10,
+            "lineInterpolation": "linear",
+            "lineWidth": 1,
+            "showPoints": "never"
+          },
+          "unit": "bytes"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 152
+      },
+      "id": 42,
+      "options": {
+        "legend": {
+          "calcs": [
+            "lastNotNull",
+            "max"
+          ],
+          "displayMode": "table",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "single",
+          "sort": "none"
+        }
+      },
+      "targets": [
+        {
+          "expr": "process_resident_memory_bytes{job=\"fastapi-loadtest\"}",
+          "legendFormat": "FastAPI process RSS",
+          "refId": "A"
+        }
+      ],
+      "title": "FastAPI Process Memory",
+      "type": "timeseries"
     }
   ],
   "refresh": "5s",
