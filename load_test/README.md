@@ -170,6 +170,31 @@ api-thread-diagnostics.log
 fake-pipeline-thread-diagnostics.log
 ```
 
+## py-spy
+
+원격 실행기는 기본적으로 Locust 시작 직전에 `gifgloo-loadtest-api` 서비스의 MainPID에
+py-spy를 연결하고 테스트 종료 직후 분리한다. EC2 loadtest 가상환경에 한 번 설치한다.
+
+```bash
+venv/bin/pip install py-spy
+```
+
+기본 sample rate는 50Hz이며 모든 Python thread를 구분한 speedscope 형식으로 수집한다.
+
+```text
+api-speedscope.json
+api-pyspy.log
+```
+
+`api-speedscope.json`은 https://www.speedscope.app 에서 열 수 있다. 첫 번째 조사는 FastAPI
+프로세스만 대상으로 하며 fake pipeline worker에는 동시에 py-spy를 연결하지 않는다.
+프로파일링을 끄거나 sample rate를 바꾸려면 로컬 실행 환경에 설정한다.
+
+```text
+LOADTEST_REMOTE_PYSPY_ENABLED=0
+LOADTEST_PYSPY_RATE=50
+```
+
 ## Credit consistency
 
 테스트 후 크레딧 정합성을 확인한다.

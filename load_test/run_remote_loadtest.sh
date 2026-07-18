@@ -33,6 +33,9 @@ LOADTEST_REMOTE_PIPELINE_WORKER_SERVICE="${LOADTEST_REMOTE_PIPELINE_WORKER_SERVI
 LOADTEST_REMOTE_PIPELINE_WORKER_PORT="${LOADTEST_REMOTE_PIPELINE_WORKER_PORT:-8012}"
 LOADTEST_REMOTE_THREAD_CAPTURE_ENABLED="${LOADTEST_REMOTE_THREAD_CAPTURE_ENABLED:-1}"
 LOADTEST_REMOTE_THREAD_CAPTURE_DIR="${LOADTEST_REMOTE_THREAD_CAPTURE_DIR:-/tmp/gifgloo-loadtest}"
+LOADTEST_REMOTE_PYSPY_ENABLED="${LOADTEST_REMOTE_PYSPY_ENABLED:-1}"
+LOADTEST_REMOTE_PYSPY_BIN="${LOADTEST_REMOTE_PYSPY_BIN:-venv/bin/py-spy}"
+LOADTEST_PYSPY_RATE="${LOADTEST_PYSPY_RATE:-50}"
 LOADTEST_GRAFANA_URL="${LOADTEST_GRAFANA_URL:-http://127.0.0.1:3000}"
 LOADTEST_PUSHGATEWAY_URL="${LOADTEST_PUSHGATEWAY_URL-http://127.0.0.1:9091}"
 LOADTEST_PUSHGATEWAY_INTERVAL_SECONDS="${LOADTEST_PUSHGATEWAY_INTERVAL_SECONDS:-5}"
@@ -57,6 +60,9 @@ remote_thread_capture_output="${LOADTEST_REMOTE_THREAD_CAPTURE_DIR}/${LOADTEST_R
 remote_thread_capture_pid_file="${LOADTEST_REMOTE_THREAD_CAPTURE_DIR}/${LOADTEST_RUN_ID}-api-threads.pid"
 remote_pipeline_thread_capture_output="${LOADTEST_REMOTE_THREAD_CAPTURE_DIR}/${LOADTEST_RUN_ID}-fake-pipeline-threads.log"
 remote_pipeline_thread_capture_pid_file="${LOADTEST_REMOTE_THREAD_CAPTURE_DIR}/${LOADTEST_RUN_ID}-fake-pipeline-threads.pid"
+remote_pyspy_output="${LOADTEST_REMOTE_THREAD_CAPTURE_DIR}/${LOADTEST_RUN_ID}-api-speedscope.json"
+remote_pyspy_log="${LOADTEST_REMOTE_THREAD_CAPTURE_DIR}/${LOADTEST_RUN_ID}-api-pyspy.log"
+remote_pyspy_pid_file="${LOADTEST_REMOTE_THREAD_CAPTURE_DIR}/${LOADTEST_RUN_ID}-api-pyspy.pid"
 
 echo "[1/9] pushgateway readiness"
 if [[ -n "$LOADTEST_PUSHGATEWAY_URL" ]]; then
@@ -89,6 +95,11 @@ fi
 echo "[6/9] copy token csv from remote"
 scp "${LOADTEST_EC2_HOST}:${remote_token_path}" "$LOADTEST_TOKEN_OUTPUT_PATH"
 
+if [[ "$LOADTEST_REMOTE_PYSPY_ENABLED" = "1" ]]; then
+  echo "start remote API py-spy capture"
+  ssh "$LOADTEST_EC2_HOST" "cd ${LOADTEST_REMOTE_DIR} && LOADTEST_PYSPY_RATE=${LOADTEST_PYSPY_RATE} load_test/start_pyspy_capture.sh ${LOADTEST_REMOTE_API_SERVICE} ${remote_pyspy_output} ${remote_pyspy_pid_file} ${remote_pyspy_log} ${LOADTEST_REMOTE_PYSPY_BIN}"
+fi
+
 echo "[7/9] run locust"
 loadtest_started_at="$(date +%s)"
 loadtest_started_at_ms="$((loadtest_started_at * 1000))"
@@ -106,6 +117,10 @@ locust_exit_code=$?
 set -e
 loadtest_ended_at="$(date +%s)"
 loadtest_ended_at_ms="$((loadtest_ended_at * 1000))"
+
+if [[ "$LOADTEST_REMOTE_PYSPY_ENABLED" = "1" ]]; then
+  ssh "$LOADTEST_EC2_HOST" "cd ${LOADTEST_REMOTE_DIR} && load_test/stop_pyspy_capture.sh ${remote_pyspy_pid_file}"
+fi
 
 cat > "${result_dir}/time_range.env" <<EOF
 LOADTEST_STARTED_AT=${loadtest_started_at}
@@ -144,6 +159,11 @@ if [[ "$LOADTEST_REMOTE_THREAD_CAPTURE_ENABLED" = "1" ]]; then
   fi
 fi
 
+if [[ "$LOADTEST_REMOTE_PYSPY_ENABLED" = "1" ]]; then
+  scp "${LOADTEST_EC2_HOST}:${remote_pyspy_output}" "${result_dir}/api-speedscope.json"
+  scp "${LOADTEST_EC2_HOST}:${remote_pyspy_log}" "${result_dir}/api-pyspy.log"
+fi
+
 echo "[9/9] remote credit consistency check"
 ssh "$LOADTEST_EC2_HOST" "cd ${LOADTEST_REMOTE_DIR} && mkdir -p \"\$(dirname ${LOADTEST_REMOTE_PROM_OUTPUT})\" && ${LOADTEST_REMOTE_PYTHON} load_test/verify_credit_consistency.py --prometheus-output ${LOADTEST_REMOTE_PROM_OUTPUT}"
 
@@ -158,6 +178,10 @@ if [[ "$LOADTEST_REMOTE_THREAD_CAPTURE_ENABLED" = "1" ]]; then
   if [[ "$LOADTEST_PIPELINE_MODE" = "external" ]]; then
     echo "fake_pipeline_thread_diagnostics=${result_dir}/fake-pipeline-thread-diagnostics.log"
   fi
+fi
+if [[ "$LOADTEST_REMOTE_PYSPY_ENABLED" = "1" ]]; then
+  echo "api_speedscope=${result_dir}/api-speedscope.json"
+  echo "api_pyspy_log=${result_dir}/api-pyspy.log"
 fi
 echo "remote_api_log=${LOADTEST_REMOTE_API_LOG}"
 echo "grafana_from=${loadtest_started_at_ms}"
