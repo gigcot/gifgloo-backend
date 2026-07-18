@@ -1,6 +1,6 @@
 import os
 from sqlalchemy import create_engine
-from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy.orm import sessionmaker, DeclarativeBase
 
 from shared.sqlalchemy_metrics import register_sqlalchemy_metrics
@@ -41,3 +41,8 @@ def get_db():
         yield db
     finally:
         db.close()
+
+
+async def get_async_db():
+    async with AsyncSessionLocal() as db:
+        yield db
