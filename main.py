@@ -1,6 +1,7 @@
+import asyncio
 import os
 import signal
-from contextlib import asynccontextmanager
+from contextlib import asynccontextmanager, suppress
 
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
@@ -10,7 +11,7 @@ load_dotenv(".env.loadtest")
 
 from config.database import engine, Base
 from shared.fastapi_error_handler import register_error_handlers
-from shared.metrics import metrics_response, record_http_metrics
+from shared.metrics import metrics_response, monitor_runtime_metrics, record_http_metrics
 import user.adapter.outbound.persistence.models  # noqa: F401
 import composition.adapter.outbound.persistence.models  # noqa: F401
 import asset.adapter.outbound.models  # noqa: F401
@@ -40,8 +41,14 @@ async def _recover_processing_jobs() -> None:
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    await _recover_processing_jobs()
-    yield
+    runtime_metrics_task = asyncio.create_task(monitor_runtime_metrics())
+    try:
+        await _recover_processing_jobs()
+        yield
+    finally:
+        runtime_metrics_task.cancel()
+        with suppress(asyncio.CancelledError):
+            await runtime_metrics_task
 
 
 Base.metadata.create_all(bind=engine)

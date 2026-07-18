@@ -2186,6 +2186,110 @@
       ],
       "title": "POST /compositions Async Latency Breakdown",
       "type": "timeseries"
+    },
+    {
+      "datasource": "Prometheus",
+      "description": "100ms 주기 probe가 예정 시각보다 늦게 깨어난 시간을 보여줍니다. 이 값이 pre-app wait와 함께 커지면 event loop 또는 process CPU가 요청 처리를 제때 스케줄하지 못하는 상태입니다.",
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "drawStyle": "line",
+            "fillOpacity": 10,
+            "lineInterpolation": "linear",
+            "lineWidth": 1,
+            "showPoints": "never"
+          },
+          "unit": "s"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 144
+      },
+      "id": 39,
+      "options": {
+        "legend": {
+          "calcs": [
+            "lastNotNull",
+            "max"
+          ],
+          "displayMode": "table",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "none"
+        }
+      },
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.95, sum by (le) (rate(event_loop_lag_seconds_bucket[1m])))",
+          "legendFormat": "p95 event loop lag",
+          "refId": "A"
+        },
+        {
+          "expr": "histogram_quantile(0.99, sum by (le) (rate(event_loop_lag_seconds_bucket[1m])))",
+          "legendFormat": "p99 event loop lag",
+          "refId": "B"
+        }
+      ],
+      "title": "Event Loop Lag",
+      "type": "timeseries"
+    },
+    {
+      "datasource": "Prometheus",
+      "description": "FastAPI sync endpoint와 sync dependency가 쓰는 AnyIO 기본 threadpool token 수입니다. borrowed가 total에 붙으면 추가 sync 작업은 threadpool에서 대기합니다.",
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "drawStyle": "line",
+            "fillOpacity": 10,
+            "lineInterpolation": "linear",
+            "lineWidth": 1,
+            "showPoints": "never"
+          },
+          "unit": "none"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 144
+      },
+      "id": 40,
+      "options": {
+        "legend": {
+          "calcs": [
+            "lastNotNull",
+            "max"
+          ],
+          "displayMode": "table",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "none"
+        }
+      },
+      "targets": [
+        {
+          "expr": "fastapi_threadpool_borrowed_tokens",
+          "legendFormat": "borrowed tokens",
+          "refId": "A"
+        },
+        {
+          "expr": "fastapi_threadpool_total_tokens",
+          "legendFormat": "token capacity",
+          "refId": "B"
+        }
+      ],
+      "title": "FastAPI Threadpool Tokens",
+      "type": "timeseries"
     }
   ],
   "refresh": "5s",

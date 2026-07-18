@@ -1,3 +1,4 @@
+import asyncio
 import json
 import logging
 import time
@@ -124,6 +125,33 @@ DB_CONNECTION_HOLD_SECONDS = Histogram(
     "Time a database connection stayed checked out from the SQLAlchemy pool.",
     ["pool", "path"],
 )
+EVENT_LOOP_LAG_SECONDS = Histogram(
+    "event_loop_lag_seconds",
+    "Delay between scheduled and actual event loop wake-up.",
+    buckets=(0.001, 0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1, 2, 3, 5, 10),
+)
+FASTAPI_THREADPOOL_BORROWED_TOKENS = Gauge(
+    "fastapi_threadpool_borrowed_tokens",
+    "AnyIO default threadpool tokens currently in use.",
+)
+FASTAPI_THREADPOOL_TOTAL_TOKENS = Gauge(
+    "fastapi_threadpool_total_tokens",
+    "AnyIO default threadpool token capacity.",
+)
+
+
+async def monitor_runtime_metrics() -> None:
+    import anyio
+
+    loop = asyncio.get_running_loop()
+    limiter = anyio.to_thread.current_default_thread_limiter()
+    interval_seconds = 0.1
+    while True:
+        expected_wake_at = loop.time() + interval_seconds
+        await asyncio.sleep(interval_seconds)
+        EVENT_LOOP_LAG_SECONDS.observe(max(0.0, loop.time() - expected_wake_at))
+        FASTAPI_THREADPOOL_BORROWED_TOKENS.set(limiter.borrowed_tokens)
+        FASTAPI_THREADPOOL_TOTAL_TOKENS.set(limiter.total_tokens)
 
 
 def metrics_response() -> Response:
