@@ -1,0 +1,16 @@
+[Unit]
+Description=Gifgloo loadtest fake pipeline worker
+After=network.target
+
+[Service]
+Type=simple
+User=ubuntu
+WorkingDirectory=/home/ubuntu/gifgloo-backend-loadtest
+EnvironmentFile=/home/ubuntu/gifgloo-backend-loadtest/.env.loadtest
+Environment=PYTHONUNBUFFERED=1
+ExecStart=/home/ubuntu/gifgloo-backend-loadtest/venv/bin/uvicorn load_test.fake_pipeline_worker:app --host 127.0.0.1 --port 8012 --workers 1
+Restart=always
+RestartSec=2
+
+[Install]
+WantedBy=multi-user.target

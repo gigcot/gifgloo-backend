@@ -45,6 +45,36 @@ LOADTEST_CREDIT_BALANCE
 LOADTEST_TOKEN_OUTPUT_PATH
 ```
 
+fake pipeline 실행 방식은 다음 환경 변수로 선택한다.
+
+```text
+LOADTEST_PIPELINE_MODE=in_process
+```
+
+기본값인 `in_process`는 API의 Uvicorn event loop에서 fake pipeline을 실행한다.
+같은 EC2의 별도 프로세스로 분리하려면 로컬과 EC2의 `.env.loadtest`에 다음을 설정한다.
+
+```text
+LOADTEST_PIPELINE_MODE=external
+LOADTEST_PIPELINE_WORKER_URL=http://127.0.0.1:8012
+```
+
+worker는 callback만 별도 프로세스에서 예약하고 전송한다. `LOADTEST_CALLBACK_URL`,
+checkpoint 횟수와 지연 설정은 기존 값을 그대로 사용하므로 API가 받는 callback 부하는 유지된다.
+
+EC2의 repository 경로와 가상환경 경로가 unit 파일의 기본값과 같다면 다음과 같이 설치한다.
+
+```bash
+sudo cp load_test/systemd/gifgloo-loadtest-fake-pipeline.service \
+  /etc/systemd/system/gifgloo-loadtest-fake-pipeline.service
+sudo systemctl daemon-reload
+sudo systemctl enable --now gifgloo-loadtest-fake-pipeline
+curl --fail http://127.0.0.1:8012/healthz
+```
+
+경로가 다르면 unit 파일의 `WorkingDirectory`, `EnvironmentFile`, `ExecStart`를 EC2 환경에 맞게
+수정한다. worker는 loopback에만 bind하므로 Security Group 포트를 추가할 필요가 없다.
+
 ## Locust
 
 `LOADTEST_PIPELINE_FAIL_MARKER`가 `gif_url`에 포함되면 fake pipeline은 `fail` callback을 호출한다.
@@ -129,6 +159,15 @@ Pushgateway 전송 없이 실행하려면 빈 값을 명시한다.
 
 ```bash
 LOADTEST_PUSHGATEWAY_URL= ./load_test/run_remote_loadtest.sh
+```
+
+`LOADTEST_PIPELINE_MODE=external`이면 실행기가 Locust 시작 전에
+`gifgloo-loadtest-fake-pipeline` 서비스를 재시작하고 readiness를 확인한다. thread capture가
+활성화되어 있으면 API와 worker를 각각 수집해 결과 폴더에 다음 파일을 저장한다.
+
+```text
+api-thread-diagnostics.log
+fake-pipeline-thread-diagnostics.log
 ```
 
 ## Credit consistency

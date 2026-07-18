@@ -1,3 +1,6 @@
+import os
+from enum import Enum
+
 from fastapi import Depends
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import Session
@@ -32,18 +35,27 @@ from composition.adapter.outbound.persistence.sqlalchemy_async_composition_write
 from composition.adapter.outbound.persistence.sqlalchemy_async_transaction import SqlAlchemyAsyncTransaction
 from composition.adapter.outbound.loadtest.fake_feasibility_check_adapter import FakeFeasibilityCheckAdapter
 from composition.adapter.outbound.loadtest.fake_pipeline_trigger_adapter import FakePipelineTriggerAdapter
+from composition.adapter.outbound.loadtest.fake_pipeline_worker_trigger_adapter import (
+    FakePipelineWorkerTriggerAdapter,
+)
 from composition.adapter.outbound.loadtest.fake_storage_adapter import FakeStorageAdapter
 
 from composition.application.services.request_composition_service import RequestCompositionService
 from composition.application.services.get_composition_status_service import GetCompositionStatusService
 from composition.application.services.get_composition_list_service import GetCompositionListService
 from composition.application.services.pipeline_callback_service import PipelineCallbackService
+from composition.application.ports.outbound.aws.pipeline_trigger_port import PipelineTriggerPort
 from user.adapter.outbound.persistence.sqlalchemy_async_user_repository import SqlAlchemyAsyncUserRepository
 from user.application.services.async_verify_user_service import AsyncVerifyUserService
 from credit_account.adapter.outbound.sqlalchemy_async_credit_account_repository import SqlAlchemyAsyncCreditAccountRepository
 from credit_account.application.services.async_credit_service import AsyncCreditService
 from asset.adapter.outbound.sqlalchemy_async_asset_repository import SqlAlchemyAsyncAssetRepository
 from asset.application.services.async_save_asset_from_url_service import AsyncSaveAssetFromUrlService
+
+
+class PipelineMode(Enum):
+    IN_PROCESS = "in_process"
+    EXTERNAL = "external"
 
 
 def _make_credit_adapter(db: Session) -> CreditAdapter:
@@ -88,6 +100,17 @@ def _make_async_asset_save_adapter(db: AsyncSession) -> AsyncAssetSaveAdapter:
     )
 
 
+def _make_pipeline_trigger() -> PipelineTriggerPort:
+    mode = (
+        PipelineMode(os.environ["LOADTEST_PIPELINE_MODE"])
+        if "LOADTEST_PIPELINE_MODE" in os.environ
+        else PipelineMode.IN_PROCESS
+    )
+    if mode is PipelineMode.IN_PROCESS:
+        return FakePipelineTriggerAdapter()
+    return FakePipelineWorkerTriggerAdapter()
+
+
 def get_request_composition_service(db: AsyncSession = Depends(get_async_db)) -> RequestCompositionService:
     return RequestCompositionService(
         user_verification=AsyncUserVerificationAdapter(_make_async_verify_user_service(db)),
@@ -95,7 +118,7 @@ def get_request_composition_service(db: AsyncSession = Depends(get_async_db)) ->
         feasibility=FakeFeasibilityCheckAdapter(),
         storage=FakeStorageAdapter(),
         asset_save=_make_async_asset_save_adapter(db),
-        pipeline_trigger=FakePipelineTriggerAdapter(),
+        pipeline_trigger=_make_pipeline_trigger(),
         composition_repo=SqlAlchemyAsyncCompositionWriter(db),
         transaction=SqlAlchemyAsyncTransaction(db),
     )
