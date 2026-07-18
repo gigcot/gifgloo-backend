@@ -28,6 +28,8 @@ LOADTEST_REMOTE_API_PORT="${LOADTEST_REMOTE_API_PORT:-8001}"
 LOADTEST_REMOTE_API_LOG="${LOADTEST_REMOTE_API_LOG:-/var/log/gifgloo/loadtest-api.log}"
 LOADTEST_REMOTE_API_SERVICE="${LOADTEST_REMOTE_API_SERVICE:-gifgloo-loadtest-api}"
 LOADTEST_REMOTE_API_READY_ATTEMPTS="${LOADTEST_REMOTE_API_READY_ATTEMPTS:-30}"
+LOADTEST_REMOTE_THREAD_CAPTURE_ENABLED="${LOADTEST_REMOTE_THREAD_CAPTURE_ENABLED:-1}"
+LOADTEST_REMOTE_THREAD_CAPTURE_DIR="${LOADTEST_REMOTE_THREAD_CAPTURE_DIR:-/tmp/gifgloo-loadtest}"
 LOADTEST_GRAFANA_URL="${LOADTEST_GRAFANA_URL:-http://127.0.0.1:3000}"
 LOADTEST_PUSHGATEWAY_URL="${LOADTEST_PUSHGATEWAY_URL-http://127.0.0.1:9091}"
 LOADTEST_PUSHGATEWAY_INTERVAL_SECONDS="${LOADTEST_PUSHGATEWAY_INTERVAL_SECONDS:-5}"
@@ -48,23 +50,31 @@ else
   remote_token_path="${LOADTEST_REMOTE_DIR}/${LOADTEST_TOKEN_OUTPUT_PATH}"
 fi
 
-echo "[1/7] pushgateway readiness"
+remote_thread_capture_output="${LOADTEST_REMOTE_THREAD_CAPTURE_DIR}/${LOADTEST_RUN_ID}-api-threads.log"
+remote_thread_capture_pid_file="${LOADTEST_REMOTE_THREAD_CAPTURE_DIR}/${LOADTEST_RUN_ID}-api-threads.pid"
+
+echo "[1/8] pushgateway readiness"
 if [[ -n "$LOADTEST_PUSHGATEWAY_URL" ]]; then
   curl --max-time 5 -fsS "${LOADTEST_PUSHGATEWAY_URL%/}/-/ready" > /dev/null
 else
   echo "Locust Pushgateway reporting is disabled"
 fi
 
-echo "[2/7] remote reset and seed"
+echo "[2/8] remote reset and seed"
 ssh "$LOADTEST_EC2_HOST" "cd ${LOADTEST_REMOTE_DIR} && ${LOADTEST_REMOTE_PYTHON} load_test/reset.py && ${LOADTEST_REMOTE_PYTHON} load_test/seed.py"
 
-echo "[3/7] remote restart api"
+echo "[3/8] remote restart api"
 ssh "$LOADTEST_EC2_HOST" "cd ${LOADTEST_REMOTE_DIR} && sudo systemctl restart ${LOADTEST_REMOTE_API_SERVICE} && for attempt in \$(seq 1 ${LOADTEST_REMOTE_API_READY_ATTEMPTS}); do if ! sudo systemctl is-active --quiet ${LOADTEST_REMOTE_API_SERVICE}; then sudo systemctl status ${LOADTEST_REMOTE_API_SERVICE} --no-pager -l; exit 1; fi; main_pid=\"\$(systemctl show -p MainPID --value ${LOADTEST_REMOTE_API_SERVICE})\"; listen_pids=\"\$(lsof -ti tcp:${LOADTEST_REMOTE_API_PORT} -sTCP:LISTEN || true)\"; if printf '%s\n' \"\${listen_pids}\" | grep -qx \"\${main_pid}\" && curl --max-time 2 -fsS http://127.0.0.1:${LOADTEST_REMOTE_API_PORT}/metrics > /dev/null; then echo \"${LOADTEST_REMOTE_API_SERVICE} ready after \${attempt}s\"; exit 0; fi; sleep 1; done; echo \"${LOADTEST_REMOTE_API_SERVICE} did not become ready within ${LOADTEST_REMOTE_API_READY_ATTEMPTS}s\"; echo \"main_pid=\${main_pid}\"; echo \"listen_pids=\${listen_pids}\"; sudo systemctl status ${LOADTEST_REMOTE_API_SERVICE} --no-pager -l; sudo lsof -nP -iTCP:${LOADTEST_REMOTE_API_PORT} -sTCP:LISTEN || true; exit 1"
 
-echo "[4/7] copy token csv from remote"
+if [[ "$LOADTEST_REMOTE_THREAD_CAPTURE_ENABLED" = "1" ]]; then
+  echo "[4/8] start remote API thread capture"
+  ssh "$LOADTEST_EC2_HOST" "cd ${LOADTEST_REMOTE_DIR} && load_test/start_api_thread_capture.sh ${LOADTEST_REMOTE_API_SERVICE} ${remote_thread_capture_output} ${remote_thread_capture_pid_file}"
+fi
+
+echo "[5/8] copy token csv from remote"
 scp "${LOADTEST_EC2_HOST}:${remote_token_path}" "$LOADTEST_TOKEN_OUTPUT_PATH"
 
-echo "[5/7] run locust"
+echo "[6/8] run locust"
 loadtest_started_at="$(date +%s)"
 loadtest_started_at_ms="$((loadtest_started_at * 1000))"
 set +e
@@ -109,15 +119,24 @@ EOF
 printf "%s\n" "$run_prometheus_metrics" > "${result_dir}/loadtest_run.prom"
 printf "%s\n" "$run_prometheus_metrics" | ssh "$LOADTEST_EC2_HOST" "mkdir -p \"\$(dirname ${LOADTEST_REMOTE_RUN_PROM_OUTPUT})\" && cat > ${LOADTEST_REMOTE_RUN_PROM_OUTPUT}"
 
-echo "[6/7] remote credit consistency check"
+if [[ "$LOADTEST_REMOTE_THREAD_CAPTURE_ENABLED" = "1" ]]; then
+  echo "[7/8] collect remote API thread capture"
+  ssh "$LOADTEST_EC2_HOST" "cd ${LOADTEST_REMOTE_DIR} && load_test/stop_api_thread_capture.sh ${remote_thread_capture_pid_file}"
+  scp "${LOADTEST_EC2_HOST}:${remote_thread_capture_output}" "${result_dir}/api-thread-diagnostics.log"
+fi
+
+echo "[8/8] remote credit consistency check"
 ssh "$LOADTEST_EC2_HOST" "cd ${LOADTEST_REMOTE_DIR} && mkdir -p \"\$(dirname ${LOADTEST_REMOTE_PROM_OUTPUT})\" && ${LOADTEST_REMOTE_PYTHON} load_test/verify_credit_consistency.py --prometheus-output ${LOADTEST_REMOTE_PROM_OUTPUT}"
 
-echo "[7/7] done"
+echo "[done]"
 echo "result_dir=${result_dir}"
 echo "credit_consistency_prom=${LOADTEST_REMOTE_PROM_OUTPUT}"
 echo "loadtest_run_prom=${LOADTEST_REMOTE_RUN_PROM_OUTPUT}"
 echo "locust_pushgateway=${LOADTEST_PUSHGATEWAY_URL:-disabled}"
 echo "loadtest_run_id=${LOADTEST_RUN_ID}"
+if [[ "$LOADTEST_REMOTE_THREAD_CAPTURE_ENABLED" = "1" ]]; then
+  echo "api_thread_diagnostics=${result_dir}/api-thread-diagnostics.log"
+fi
 echo "remote_api_log=${LOADTEST_REMOTE_API_LOG}"
 echo "grafana_from=${loadtest_started_at_ms}"
 echo "grafana_to=${loadtest_ended_at_ms}"
