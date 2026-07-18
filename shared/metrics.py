@@ -130,6 +130,10 @@ EVENT_LOOP_LAG_SECONDS = Histogram(
     "Delay between scheduled and actual event loop wake-up.",
     buckets=(0.001, 0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1, 2, 3, 5, 10),
 )
+EVENT_LOOP_LAG_WINDOW_MAX_SECONDS = Gauge(
+    "event_loop_lag_window_max_seconds",
+    "Maximum event loop wake-up lag observed in the rolling one-minute window.",
+)
 FASTAPI_THREADPOOL_BORROWED_TOKENS = Gauge(
     "fastapi_threadpool_borrowed_tokens",
     "AnyIO default threadpool tokens currently in use.",
@@ -146,10 +150,20 @@ async def monitor_runtime_metrics() -> None:
     loop = asyncio.get_running_loop()
     limiter = anyio.to_thread.current_default_thread_limiter()
     interval_seconds = 0.1
+    window_started_at = loop.time()
+    window_max_lag_seconds = 0.0
     while True:
         expected_wake_at = loop.time() + interval_seconds
         await asyncio.sleep(interval_seconds)
-        EVENT_LOOP_LAG_SECONDS.observe(max(0.0, loop.time() - expected_wake_at))
+        now = loop.time()
+        lag_seconds = max(0.0, now - expected_wake_at)
+        EVENT_LOOP_LAG_SECONDS.observe(lag_seconds)
+        if now - window_started_at >= 60:
+            window_started_at = now
+            window_max_lag_seconds = lag_seconds
+        else:
+            window_max_lag_seconds = max(window_max_lag_seconds, lag_seconds)
+        EVENT_LOOP_LAG_WINDOW_MAX_SECONDS.set(window_max_lag_seconds)
         FASTAPI_THREADPOOL_BORROWED_TOKENS.set(limiter.borrowed_tokens)
         FASTAPI_THREADPOOL_TOTAL_TOKENS.set(limiter.total_tokens)
 

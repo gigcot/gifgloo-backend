@@ -2234,6 +2234,16 @@
           "expr": "histogram_quantile(0.99, sum by (le) (rate(event_loop_lag_seconds_bucket[1m])))",
           "legendFormat": "p99 event loop lag",
           "refId": "B"
+        },
+        {
+          "expr": "histogram_quantile(0.999, sum by (le) (rate(event_loop_lag_seconds_bucket[1m])))",
+          "legendFormat": "p99.9 event loop lag",
+          "refId": "C"
+        },
+        {
+          "expr": "event_loop_lag_window_max_seconds",
+          "legendFormat": "rolling 1m max event loop lag",
+          "refId": "D"
         }
       ],
       "title": "Event Loop Lag",
