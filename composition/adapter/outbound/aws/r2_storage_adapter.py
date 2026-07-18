@@ -1,6 +1,6 @@
 import os
 
-import boto3
+import aioboto3
 
 from composition.application.ports.outbound.aws.storage_port import StoragePort, StorageCategory
 
@@ -9,17 +9,6 @@ _CATEGORY_CONFIG = {
     StorageCategory.DRAFT: {"extension": "png", "content_type": "image/png"},
     StorageCategory.RESULT: {"extension": "gif", "content_type": "image/gif", "content_disposition": "attachment"},
 }
-
-
-def _make_client():
-    return boto3.client(
-        "s3",
-        endpoint_url=os.getenv("R2_ENDPOINT_URL"),
-        aws_access_key_id=os.getenv("R2_ACCESS_KEY_ID"),
-        aws_secret_access_key=os.getenv("R2_SECRET_ACCESS_KEY"),
-        region_name="auto",
-    )
-
 
 BUCKET_NAME = os.getenv("R2_BUCKET_NAME")
 
@@ -38,11 +27,19 @@ class R2StorageAdapter(StoragePort):
         extra = {}
         if "content_disposition" in config:
             extra["ContentDisposition"] = config["content_disposition"]
-        _make_client().put_object(
-            Bucket=BUCKET_NAME,
-            Key=key,
-            Body=data,
-            ContentType=config["content_type"],
-            **extra,
-        )
+        session = aioboto3.Session()
+        async with session.client(
+            "s3",
+            endpoint_url=os.getenv("R2_ENDPOINT_URL"),
+            aws_access_key_id=os.getenv("R2_ACCESS_KEY_ID"),
+            aws_secret_access_key=os.getenv("R2_SECRET_ACCESS_KEY"),
+            region_name="auto",
+        ) as client:
+            await client.put_object(
+                Bucket=BUCKET_NAME,
+                Key=key,
+                Body=data,
+                ContentType=config["content_type"],
+                **extra,
+            )
         return key
