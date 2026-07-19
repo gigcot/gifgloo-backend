@@ -8,14 +8,6 @@ from shared.asset_category import AssetCategory
 from shared.exceptions import AuthorizationException, ValidationException
 import uuid
 
-_CATEGORY_TO_ASSET_TYPE = {
-    AssetCategory.KLIPY_GIF: AssetType.ANIMATED,
-    AssetCategory.USER_UPLOAD: AssetType.STATIC,
-    AssetCategory.COMPOSITION_DRAFT: AssetType.STATIC,
-    AssetCategory.COMPOSITION_RESULT: AssetType.ANIMATED,
-}
-
-
 class SaveAssetService(SaveAssetPort):
     def __init__(
             self,
@@ -35,7 +27,7 @@ class SaveAssetService(SaveAssetPort):
             raise ValidationException("url 또는 image_data 중 하나는 필요합니다")
 
         asset_id = str(uuid.uuid4())
-        asset_type = _CATEGORY_TO_ASSET_TYPE[command.category]
+        asset_type = AssetType.from_category(command.category)
 
         if command.image_data:
             save_result = self._external_storage.execute(

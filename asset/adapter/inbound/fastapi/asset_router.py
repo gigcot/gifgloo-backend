@@ -2,12 +2,12 @@ import os
 from typing import Optional
 
 import jwt
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 
 from asset.application.ports.inbound.delete import DeleteAssetCommand
 from asset.application.ports.inbound.get_asset_list import GetAssetListCommand
 from asset.application.services.delete_asset_service import DeleteAssetService
-from asset.application.services.get_asset_list_service import GetAssetListlService
+from asset.application.services.get_asset_list_service import GetAssetListService
 from config.asset import get_asset_list_service, get_delete_asset_service
 from shared.asset_category import AssetCategory
 
@@ -28,13 +28,22 @@ def _get_user_id(request: Request) -> str:
 
 
 @router.get("")
-def get_asset_list(
+async def get_asset_list(
     request: Request,
     category: Optional[AssetCategory] = None,
-    service: GetAssetListlService = Depends(get_asset_list_service),
+    limit: int = Query(50, ge=1, le=100),
+    offset: int = Query(0, ge=0),
+    service: GetAssetListService = Depends(get_asset_list_service),
 ):
     user_id = _get_user_id(request)
-    result = service.execute(GetAssetListCommand(user_id=user_id, category=category))
+    result = await service.execute(
+        GetAssetListCommand(
+            user_id=user_id,
+            category=category,
+            limit=limit,
+            offset=offset,
+        )
+    )
     return {
         "assets": [
             {

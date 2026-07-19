@@ -30,7 +30,7 @@ class ChangeRoleBody(BaseModel):
     new_role: UserRole
 
 @router.get("/me")
-def is_signed_in(request: Request):  
+async def is_signed_in(request: Request):
     
     token = request.cookies.get("user_token")
     if token is None:

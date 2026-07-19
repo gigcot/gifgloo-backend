@@ -14,10 +14,8 @@ class SqlAlchemyCreditAccountRepository(CreditAccountRepositoryPort):
         existing = self._session.get(CreditAccountModel, input.user_id)
         if existing:
             existing.balance = input.balance
-            existing_tx_ids = {t.id for t in existing.transactions}
-            for tx in input.transactions:
-                if tx.id not in existing_tx_ids:
-                    existing.transactions.append(self._tx_to_model(tx, input.user_id))
+            for transaction in input.pending_transactions:
+                self._session.add(self._tx_to_model(transaction, input.user_id))
         else:
             self._session.add(CreditAccountModel(
                 user_id=input.user_id,
@@ -25,6 +23,7 @@ class SqlAlchemyCreditAccountRepository(CreditAccountRepositoryPort):
                 transactions=[self._tx_to_model(tx, input.user_id) for tx in input.transactions],
             ))
         self._session.commit()
+        input.mark_pending_transactions_persisted()
 
     def find_credit_by_user_id(self, user_id: str) -> CreditAccount | None:
         model = self._session.get(CreditAccountModel, user_id)

@@ -9,5 +9,9 @@ class AsyncCreditAccountRepository(ABC):
         pass
 
     @abstractmethod
-    async def find_credit_by_user_id(self, user_id: str, for_update: bool = False) -> CreditAccount | None:
+    async def find_for_update(self, user_id: str) -> CreditAccount | None:
+        pass
+
+    @abstractmethod
+    async def find_balance_by_user_id(self, user_id: str) -> CreditAccount | None:
         pass

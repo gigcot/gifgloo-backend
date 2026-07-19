@@ -8,14 +8,6 @@ from shared.exceptions import AuthorizationException, ValidationException
 from user.application.services.async_verify_user_service import AsyncVerifyUserService
 
 
-_CATEGORY_TO_ASSET_TYPE = {
-    AssetCategory.KLIPY_GIF: AssetType.ANIMATED,
-    AssetCategory.USER_UPLOAD: AssetType.STATIC,
-    AssetCategory.COMPOSITION_DRAFT: AssetType.STATIC,
-    AssetCategory.COMPOSITION_RESULT: AssetType.ANIMATED,
-}
-
-
 class AsyncSaveAssetFromUrlService:
     def __init__(self, user_verification: AsyncVerifyUserService, asset_repo: AsyncAssetRepository):
         self._user_verification = user_verification
@@ -31,7 +23,7 @@ class AsyncSaveAssetFromUrlService:
         asset = Asset(
             asset_id,
             user_id,
-            _CATEGORY_TO_ASSET_TYPE[category],
+            AssetType.from_category(category),
             StorageUrl(url),
         )
         await self._asset_repo.save(
