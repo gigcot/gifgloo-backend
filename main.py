@@ -11,13 +11,14 @@ from dotenv import load_dotenv
 import httpx
 load_dotenv(".env.loadtest")
 os.environ.setdefault("DB_POOL_PRE_PING", "false")
-os.environ.setdefault("ASYNC_DB_POOL_SIZE", "8")
-os.environ.setdefault("ASYNC_DB_MAX_OVERFLOW", "2")
+os.environ.setdefault("ASYNC_DB_POOL_SIZE", "4")
+os.environ.setdefault("ASYNC_DB_MAX_OVERFLOW", "1")
 
 from config.database import engine, Base
 from shared.fastapi_error_handler import register_error_handlers
 from shared.metrics import (
     metrics_response,
+    mark_metrics_process_dead,
     monitor_runtime_metrics,
     record_http_metrics,
     start_request_timing_log_listener,
@@ -68,6 +69,7 @@ async def lifespan(app: FastAPI):
         await pipeline_trigger.aclose()
         await http_client.aclose()
         stop_request_timing_log_listener()
+        mark_metrics_process_dead()
 
 
 Base.metadata.create_all(bind=engine)

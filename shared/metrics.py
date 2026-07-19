@@ -1,6 +1,9 @@
 import asyncio
 import json
 import logging
+import os
+import resource
+import sys
 import time
 from collections.abc import Awaitable, Callable
 from datetime import datetime, timezone
@@ -8,7 +11,15 @@ from logging.handlers import QueueHandler, QueueListener
 from queue import SimpleQueue
 
 from fastapi import Request, Response
-from prometheus_client import CONTENT_TYPE_LATEST, Counter, Gauge, Histogram, generate_latest
+from prometheus_client import (
+    CONTENT_TYPE_LATEST,
+    CollectorRegistry,
+    Counter,
+    Gauge,
+    Histogram,
+    generate_latest,
+    multiprocess,
+)
 from starlette.responses import Response as StarletteResponse
 
 from shared.request_context import current_request_path
@@ -62,11 +73,13 @@ HTTP_REQUESTS_IN_PROGRESS = Gauge(
     "http_requests_in_progress",
     "HTTP requests currently in progress.",
     ["method", "path"],
+    multiprocess_mode="livesum",
 )
 
 SSE_ACTIVE_CONNECTIONS = Gauge(
     "sse_active_connections",
     "Active SSE connections.",
+    multiprocess_mode="livesum",
 )
 SSE_COMPLETED_TOTAL = Counter(
     "sse_completed_total",
@@ -139,6 +152,7 @@ DB_POOL_CHECKED_OUT = Gauge(
     "db_pool_checked_out",
     "Database connections currently checked out from the SQLAlchemy pool.",
     ["pool"],
+    multiprocess_mode="livesum",
 )
 DB_CONNECTION_HOLD_SECONDS = Histogram(
     "db_connection_hold_seconds",
@@ -153,15 +167,41 @@ EVENT_LOOP_LAG_SECONDS = Histogram(
 EVENT_LOOP_LAG_WINDOW_MAX_SECONDS = Gauge(
     "event_loop_lag_window_max_seconds",
     "Maximum event loop wake-up lag observed in the rolling one-minute window.",
+    multiprocess_mode="livemax",
 )
 FASTAPI_THREADPOOL_BORROWED_TOKENS = Gauge(
     "fastapi_threadpool_borrowed_tokens",
     "AnyIO default threadpool tokens currently in use.",
+    multiprocess_mode="livesum",
 )
 FASTAPI_THREADPOOL_TOTAL_TOKENS = Gauge(
     "fastapi_threadpool_total_tokens",
     "AnyIO default threadpool token capacity.",
+    multiprocess_mode="livesum",
 )
+FASTAPI_PROCESS_CPU_SECONDS = Counter(
+    "fastapi_process_cpu_seconds",
+    "CPU time consumed by all live FastAPI worker processes.",
+)
+FASTAPI_PROCESS_RESIDENT_MEMORY_BYTES = Gauge(
+    "fastapi_process_resident_memory_bytes",
+    "Resident memory used by all live FastAPI worker processes.",
+    multiprocess_mode="livesum",
+)
+FASTAPI_WORKER_PROCESSES = Gauge(
+    "fastapi_worker_processes",
+    "Live FastAPI worker processes.",
+    multiprocess_mode="livesum",
+)
+
+
+def _resident_memory_bytes() -> int:
+    if os.path.exists("/proc/self/statm"):
+        with open("/proc/self/statm") as statm:
+            resident_pages = int(statm.read().split()[1])
+        return resident_pages * os.sysconf("SC_PAGE_SIZE")
+    max_rss = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
+    return max_rss if sys.platform == "darwin" else max_rss * 1024
 
 
 async def monitor_runtime_metrics() -> None:
@@ -172,10 +212,19 @@ async def monitor_runtime_metrics() -> None:
     interval_seconds = 0.1
     window_started_at = loop.time()
     window_max_lag_seconds = 0.0
+    last_process_cpu_seconds = time.process_time()
+    next_memory_sample_at = loop.time()
+    FASTAPI_WORKER_PROCESSES.set(1)
     while True:
         expected_wake_at = loop.time() + interval_seconds
         await asyncio.sleep(interval_seconds)
         now = loop.time()
+        process_cpu_seconds = time.process_time()
+        FASTAPI_PROCESS_CPU_SECONDS.inc(process_cpu_seconds - last_process_cpu_seconds)
+        last_process_cpu_seconds = process_cpu_seconds
+        if now >= next_memory_sample_at:
+            FASTAPI_PROCESS_RESIDENT_MEMORY_BYTES.set(_resident_memory_bytes())
+            next_memory_sample_at = now + 1
         lag_seconds = max(0.0, now - expected_wake_at)
         EVENT_LOOP_LAG_SECONDS.observe(lag_seconds)
         if now - window_started_at >= 60:
@@ -189,7 +238,16 @@ async def monitor_runtime_metrics() -> None:
 
 
 def metrics_response() -> Response:
-    return Response(generate_latest(), media_type=CONTENT_TYPE_LATEST)
+    if "PROMETHEUS_MULTIPROC_DIR" not in os.environ:
+        return Response(generate_latest(), media_type=CONTENT_TYPE_LATEST)
+    registry = CollectorRegistry()
+    multiprocess.MultiProcessCollector(registry)
+    return Response(generate_latest(registry), media_type=CONTENT_TYPE_LATEST)
+
+
+def mark_metrics_process_dead() -> None:
+    if "PROMETHEUS_MULTIPROC_DIR" in os.environ:
+        multiprocess.mark_process_dead(os.getpid())
 
 
 def route_path(request: Request) -> str:

@@ -30,6 +30,7 @@ CORS_ORIGINS
 DB_POOL_PRE_PING
 ASYNC_DB_POOL_SIZE
 ASYNC_DB_MAX_OVERFLOW
+LOADTEST_API_WORKERS
 LOADTEST_CALLBACK_URL
 LOADTEST_PIPELINE_FAIL_MARKER
 LOADTEST_DELAY_EXTRACTING_FRAMES_SECONDS
@@ -53,9 +54,13 @@ LOADTEST_TOKEN_OUTPUT_PATH
 
 ```text
 DB_POOL_PRE_PING=false
-ASYNC_DB_POOL_SIZE=8
-ASYNC_DB_MAX_OVERFLOW=2
+LOADTEST_API_WORKERS=2
+ASYNC_DB_POOL_SIZE=4
+ASYNC_DB_MAX_OVERFLOW=1
 ```
+
+API worker가 2개이므로 async connection pool은 worker당 최대 5개, 전체 최대 10개다.
+worker 수를 바꾸면 전체 최대 연결 수가 `workers * (pool_size + max_overflow)`가 되는 점을 함께 조정한다.
 
 API의 Uvicorn access log는 Nginx JSON access log와 중복되므로 기본적으로 비활성화된다.
 일시적으로 필요하면 다음 값을 설정한다.
@@ -81,18 +86,23 @@ LOADTEST_PIPELINE_WORKER_URL=http://127.0.0.1:8012
 worker는 callback만 별도 프로세스에서 예약하고 전송한다. `LOADTEST_CALLBACK_URL`,
 checkpoint 횟수와 지연 설정은 기존 값을 그대로 사용하므로 API가 받는 callback 부하는 유지된다.
 
-EC2의 repository 경로와 가상환경 경로가 unit 파일의 기본값과 같다면 다음과 같이 설치한다.
+EC2의 repository 경로와 가상환경 경로가 unit 파일의 기본값과 같다면 API와 worker unit을 함께 설치한다.
 
 ```bash
+sudo cp load_test/systemd/gifgloo-loadtest-api.service \
+  /etc/systemd/system/gifgloo-loadtest-api.service
 sudo cp load_test/systemd/gifgloo-loadtest-fake-pipeline.service \
   /etc/systemd/system/gifgloo-loadtest-fake-pipeline.service
 sudo systemctl daemon-reload
+sudo systemctl enable --now gifgloo-loadtest-api
 sudo systemctl enable --now gifgloo-loadtest-fake-pipeline
+curl --fail http://127.0.0.1:8001/metrics | grep fastapi_worker_processes
 curl --fail http://127.0.0.1:8012/healthz
 ```
 
 경로가 다르면 unit 파일의 `WorkingDirectory`, `EnvironmentFile`, `ExecStart`를 EC2 환경에 맞게
-수정한다. worker는 loopback에만 bind하므로 Security Group 포트를 추가할 필요가 없다.
+수정한다. API unit은 Uvicorn worker 2개와 Prometheus multiprocess directory 초기화를 함께 관리한다.
+worker는 loopback에만 bind하므로 Security Group 포트를 추가할 필요가 없다.
 
 ## Locust
 

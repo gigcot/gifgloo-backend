@@ -28,6 +28,7 @@ LOADTEST_REMOTE_API_PORT="${LOADTEST_REMOTE_API_PORT:-8001}"
 LOADTEST_REMOTE_API_LOG="${LOADTEST_REMOTE_API_LOG:-/var/log/gifgloo/loadtest-api.log}"
 LOADTEST_REMOTE_API_SERVICE="${LOADTEST_REMOTE_API_SERVICE:-gifgloo-loadtest-api}"
 LOADTEST_REMOTE_API_READY_ATTEMPTS="${LOADTEST_REMOTE_API_READY_ATTEMPTS:-30}"
+LOADTEST_API_WORKERS="${LOADTEST_API_WORKERS:-2}"
 LOADTEST_PIPELINE_MODE="${LOADTEST_PIPELINE_MODE:-in_process}"
 LOADTEST_REMOTE_PIPELINE_WORKER_SERVICE="${LOADTEST_REMOTE_PIPELINE_WORKER_SERVICE:-gifgloo-loadtest-fake-pipeline}"
 LOADTEST_REMOTE_PIPELINE_WORKER_PORT="${LOADTEST_REMOTE_PIPELINE_WORKER_PORT:-8012}"
@@ -82,7 +83,7 @@ else
 fi
 
 echo "[4/9] remote restart api"
-ssh "$LOADTEST_EC2_HOST" "cd ${LOADTEST_REMOTE_DIR} && sudo systemctl restart ${LOADTEST_REMOTE_API_SERVICE} && for attempt in \$(seq 1 ${LOADTEST_REMOTE_API_READY_ATTEMPTS}); do if ! sudo systemctl is-active --quiet ${LOADTEST_REMOTE_API_SERVICE}; then sudo systemctl status ${LOADTEST_REMOTE_API_SERVICE} --no-pager -l; exit 1; fi; main_pid=\"\$(systemctl show -p MainPID --value ${LOADTEST_REMOTE_API_SERVICE})\"; listen_pids=\"\$(lsof -ti tcp:${LOADTEST_REMOTE_API_PORT} -sTCP:LISTEN || true)\"; if printf '%s\n' \"\${listen_pids}\" | grep -qx \"\${main_pid}\" && curl --max-time 2 -fsS http://127.0.0.1:${LOADTEST_REMOTE_API_PORT}/metrics > /dev/null; then echo \"${LOADTEST_REMOTE_API_SERVICE} ready after \${attempt}s\"; exit 0; fi; sleep 1; done; echo \"${LOADTEST_REMOTE_API_SERVICE} did not become ready within ${LOADTEST_REMOTE_API_READY_ATTEMPTS}s\"; echo \"main_pid=\${main_pid}\"; echo \"listen_pids=\${listen_pids}\"; sudo systemctl status ${LOADTEST_REMOTE_API_SERVICE} --no-pager -l; sudo lsof -nP -iTCP:${LOADTEST_REMOTE_API_PORT} -sTCP:LISTEN || true; exit 1"
+ssh "$LOADTEST_EC2_HOST" "cd ${LOADTEST_REMOTE_DIR} && sudo systemctl restart ${LOADTEST_REMOTE_API_SERVICE} && for attempt in \$(seq 1 ${LOADTEST_REMOTE_API_READY_ATTEMPTS}); do if ! sudo systemctl is-active --quiet ${LOADTEST_REMOTE_API_SERVICE}; then sudo systemctl status ${LOADTEST_REMOTE_API_SERVICE} --no-pager -l; exit 1; fi; listen_pids=\"\$(lsof -ti tcp:${LOADTEST_REMOTE_API_PORT} -sTCP:LISTEN || true)\"; metrics_body=\"\$(curl --max-time 2 -fsS http://127.0.0.1:${LOADTEST_REMOTE_API_PORT}/metrics || true)\"; worker_count=\"\$(printf '%s\n' \"\${metrics_body}\" | awk '\$1 == \"fastapi_worker_processes\" { print int(\$2) }')\"; if [[ -n \"\${listen_pids}\" && \"\${worker_count}\" = \"${LOADTEST_API_WORKERS}\" ]]; then echo \"${LOADTEST_REMOTE_API_SERVICE} ready with \${worker_count} workers after \${attempt}s\"; exit 0; fi; sleep 1; done; echo \"${LOADTEST_REMOTE_API_SERVICE} did not become ready with ${LOADTEST_API_WORKERS} workers within ${LOADTEST_REMOTE_API_READY_ATTEMPTS}s\"; echo \"listen_pids=\${listen_pids}\"; echo \"worker_count=\${worker_count}\"; sudo systemctl status ${LOADTEST_REMOTE_API_SERVICE} --no-pager -l; sudo lsof -nP -iTCP:${LOADTEST_REMOTE_API_PORT} -sTCP:LISTEN || true; exit 1"
 
 if [[ "$LOADTEST_REMOTE_THREAD_CAPTURE_ENABLED" = "1" ]]; then
   echo "[5/9] start remote process thread capture"
@@ -129,6 +130,8 @@ LOADTEST_STARTED_AT_MS=${loadtest_started_at_ms}
 LOADTEST_ENDED_AT_MS=${loadtest_ended_at_ms}
 LOADTEST_GRAFANA_FROM=${loadtest_started_at_ms}
 LOADTEST_GRAFANA_TO=${loadtest_ended_at_ms}
+LOADTEST_API_WORKERS=${LOADTEST_API_WORKERS}
+LOADTEST_PIPELINE_MODE=${LOADTEST_PIPELINE_MODE}
 EOF
 
 run_prometheus_metrics="$(cat <<EOF
@@ -144,6 +147,12 @@ loadtest_run_users{profile="${LOADTEST_PROFILE}"} ${LOADTEST_USERS}
 # HELP loadtest_run_spawn_rate Last loadtest run spawn rate.
 # TYPE loadtest_run_spawn_rate gauge
 loadtest_run_spawn_rate{profile="${LOADTEST_PROFILE}"} ${LOADTEST_SPAWN_RATE}
+# HELP loadtest_run_api_workers Uvicorn worker processes used by the last loadtest run.
+# TYPE loadtest_run_api_workers gauge
+loadtest_run_api_workers{profile="${LOADTEST_PROFILE}"} ${LOADTEST_API_WORKERS}
+# HELP loadtest_run_pipeline_mode_info Fake pipeline execution mode used by the last loadtest run.
+# TYPE loadtest_run_pipeline_mode_info gauge
+loadtest_run_pipeline_mode_info{profile="${LOADTEST_PROFILE}",mode="${LOADTEST_PIPELINE_MODE}"} 1
 EOF
 )"
 printf "%s\n" "$run_prometheus_metrics" > "${result_dir}/loadtest_run.prom"

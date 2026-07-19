@@ -2340,17 +2340,17 @@
       },
       "targets": [
         {
-          "expr": "rate(process_cpu_seconds_total{job=\"fastapi-loadtest\"}[1m]) * 100",
-          "legendFormat": "FastAPI process CPU",
+          "expr": "rate(fastapi_process_cpu_seconds_total{job=\"fastapi-loadtest\"}[1m]) * 100",
+          "legendFormat": "FastAPI workers CPU",
           "refId": "A"
         }
       ],
-      "title": "FastAPI Process CPU",
+      "title": "FastAPI Workers CPU",
       "type": "timeseries"
     },
     {
       "datasource": "Prometheus",
-      "description": "단일 Uvicorn 프로세스의 resident set size(RSS)입니다. 운영체제가 실제 메모리에 유지하는 크기입니다.",
+      "description": "모든 Uvicorn worker 프로세스의 resident set size(RSS) 합계입니다.",
       "fieldConfig": {
         "defaults": {
           "custom": {
@@ -2387,12 +2387,12 @@
       },
       "targets": [
         {
-          "expr": "process_resident_memory_bytes{job=\"fastapi-loadtest\"}",
-          "legendFormat": "FastAPI process RSS",
+          "expr": "fastapi_process_resident_memory_bytes{job=\"fastapi-loadtest\"}",
+          "legendFormat": "FastAPI workers RSS",
           "refId": "A"
         }
       ],
-      "title": "FastAPI Process Memory",
+      "title": "FastAPI Workers Memory",
       "type": "timeseries"
     }
   ],
