@@ -19,13 +19,19 @@ class FakePipelineWorkerTriggerAdapter(PipelineTriggerPort):
 
     async def trigger(self, command: PipelineTriggerCommand) -> None:
         mode = "fail" if self._fail_marker in command.gif_url else "complete"
-        response = await self._client.post(
-            f"{self._worker_url}/pipelines",
-            json=asdict(command),
-            headers={"X-Internal-Secret": self._internal_secret},
-            timeout=5,
-        )
-        response.raise_for_status()
+        for attempt in range(2):
+            try:
+                response = await self._client.post(
+                    f"{self._worker_url}/pipelines",
+                    json=asdict(command),
+                    headers={"X-Internal-Secret": self._internal_secret},
+                    timeout=5,
+                )
+                response.raise_for_status()
+                break
+            except httpx.TransportError:
+                if attempt == 1:
+                    raise
         FAKE_PIPELINE_TRIGGER_TOTAL.labels(mode=mode).inc()
 
     async def aclose(self) -> None:

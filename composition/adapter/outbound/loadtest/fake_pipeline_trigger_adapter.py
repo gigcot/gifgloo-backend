@@ -16,6 +16,7 @@ class FakePipelineTriggerAdapter(PipelineTriggerPort):
     def __init__(self, client: httpx.AsyncClient):
         self._client = client
         self._tasks: set[asyncio.Task[None]] = set()
+        self._accepted_job_ids: set[str] = set()
         self._callback_url = os.environ["LOADTEST_CALLBACK_URL"].rstrip("/")
         self._internal_secret = os.environ["INTERNAL_SECRET"]
         self._fail_marker = os.environ["LOADTEST_PIPELINE_FAIL_MARKER"]
@@ -38,6 +39,9 @@ class FakePipelineTriggerAdapter(PipelineTriggerPort):
         self._completion_delay_seconds = float(os.environ["LOADTEST_DELAY_COMPLETION_SECONDS"])
 
     async def trigger(self, command: PipelineTriggerCommand) -> None:
+        if command.job_id in self._accepted_job_ids:
+            return
+        self._accepted_job_ids.add(command.job_id)
         mode = self._mode_for(command)
         FAKE_PIPELINE_TRIGGER_TOTAL.labels(mode=mode).inc()
         task = asyncio.create_task(self._run_pipeline(command))
