@@ -17,7 +17,7 @@ from composition.application.ports.outbound.aws.storage_port import StoragePort,
 from composition.application.ports.outbound.aws.pipeline_trigger_port import PipelineTriggerPort, PipelineTriggerCommand
 from composition.application.ports.outbound.domain_bridges.async_credit_port import AsyncCreditPort
 from composition.application.ports.outbound.domain_bridges.async_user_verification_port import AsyncUserVerificationPort
-from composition.application.ports.outbound.persistence.async_composition_writer import AsyncCompositionWriter
+from composition.application.ports.outbound.persistence.async_composition_repository import AsyncCompositionRepository
 from composition.application.ports.outbound.persistence.async_transaction import AsyncTransaction
 from composition.application.ports.outbound.domain_bridges.async_asset_save_port import AsyncAssetSavePort
 from composition.application.ports.outbound.domain_bridges.asset_save_port import AssetSaveCommand
@@ -35,7 +35,7 @@ class RequestCompositionService(RequestCompositionPort):
         storage: StoragePort,
         asset_save: AsyncAssetSavePort,
         pipeline_trigger: PipelineTriggerPort,
-        composition_repo: AsyncCompositionWriter,
+        composition_repo: AsyncCompositionRepository,
         transaction: AsyncTransaction,
     ):
         self._user_verification = user_verification
@@ -88,7 +88,7 @@ class RequestCompositionService(RequestCompositionPort):
             )
 
             job.start_processing()
-            await self._composition_repo.save(job)
+            await self._composition_repo.add(job)
             COMPOSITION_CREATED_TOTAL.inc()
 
             try:
@@ -96,7 +96,7 @@ class RequestCompositionService(RequestCompositionPort):
                 CREDIT_DEDUCT_TOTAL.inc()
             except Exception as e:
                 job.fail(str(e))
-                await self._composition_repo.save(job)
+                await self._composition_repo.update(job)
                 await self._transaction.commit()
                 raise BusinessRuleException(str(e))
 
@@ -120,7 +120,7 @@ class RequestCompositionService(RequestCompositionPort):
             await self._credit.refund(command.user_id)
             CREDIT_REFUND_TOTAL.inc()
             job.fail(str(e))
-            await self._composition_repo.save(job)
+            await self._composition_repo.update(job)
             await self._transaction.commit()
             raise
 

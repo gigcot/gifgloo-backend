@@ -27,6 +27,9 @@ LOADTEST_POSTGRES_PORT
 JWT_SECRET_KEY
 INTERNAL_SECRET
 CORS_ORIGINS
+DB_POOL_PRE_PING
+ASYNC_DB_POOL_SIZE
+ASYNC_DB_MAX_OVERFLOW
 LOADTEST_CALLBACK_URL
 LOADTEST_PIPELINE_FAIL_MARKER
 LOADTEST_DELAY_EXTRACTING_FRAMES_SECONDS
@@ -43,6 +46,22 @@ LOADTEST_USER_EMAIL_DOMAIN
 LOADTEST_USER_COUNT
 LOADTEST_CREDIT_BALANCE
 LOADTEST_TOKEN_OUTPUT_PATH
+```
+
+부하 테스트 DB가 안정적으로 유지되는 환경에서는 checkout마다 ping 쿼리를 추가하지 않도록
+다음 값을 사용한다. 운영 환경의 기본값은 `true`다.
+
+```text
+DB_POOL_PRE_PING=false
+ASYNC_DB_POOL_SIZE=8
+ASYNC_DB_MAX_OVERFLOW=2
+```
+
+API의 Uvicorn access log는 Nginx JSON access log와 중복되므로 기본적으로 비활성화된다.
+일시적으로 필요하면 다음 값을 설정한다.
+
+```text
+LOADTEST_UVICORN_ACCESS_LOG=true
 ```
 
 fake pipeline 실행 방식은 다음 환경 변수로 선택한다.
@@ -172,14 +191,15 @@ fake-pipeline-thread-diagnostics.log
 
 ## py-spy
 
-원격 실행기는 기본적으로 Locust 시작 직전에 `gifgloo-loadtest-api` 서비스의 MainPID에
-py-spy를 연결하고 테스트 종료 직후 분리한다. EC2 loadtest 가상환경에 한 번 설치한다.
+원격 실행기는 성능 비교를 방해하지 않도록 기본적으로 py-spy를 비활성화한다. 함수 단위
+프로파일이 필요한 run에서만 `LOADTEST_REMOTE_PYSPY_ENABLED=1`로 켠다. EC2 loadtest
+가상환경에는 한 번 설치한다.
 
 ```bash
 venv/bin/pip install py-spy
 ```
 
-기본 sample rate는 50Hz이며 모든 Python thread를 구분한 speedscope 형식으로 수집한다.
+활성화하면 기본 sample rate 50Hz로 모든 Python thread를 구분한 speedscope 형식을 수집한다.
 
 ```text
 api-speedscope.json

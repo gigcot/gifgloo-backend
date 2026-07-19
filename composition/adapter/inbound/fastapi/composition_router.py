@@ -3,7 +3,7 @@ import logging
 import os
 
 import jwt
-from fastapi import APIRouter, Depends, HTTPException, Request, UploadFile, File, Form
+from fastapi import APIRouter, Depends, HTTPException, Request, UploadFile, File, Form, Query
 from fastapi.responses import StreamingResponse
 
 from composition.application.ports.inbound.get_composition_status import GetCompositionStatusQuery
@@ -43,12 +43,14 @@ def _get_user_id(request: Request) -> str:
 
 
 @router.get("")
-def get_composition_list(
+async def get_composition_list(
     request: Request,
+    limit: int = Query(50, ge=1, le=100),
+    offset: int = Query(0, ge=0),
     service: GetCompositionListService = Depends(get_composition_list_service),
 ):
     user_id = _get_user_id(request)
-    jobs = service.execute(user_id)
+    jobs = await service.execute(user_id, limit, offset)
     return {
         "jobs": [
             {

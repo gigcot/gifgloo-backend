@@ -1,4 +1,5 @@
 import asyncio
+import logging
 import os
 
 import httpx
@@ -12,7 +13,9 @@ from shared.metrics import FAKE_PIPELINE_TRIGGER_TOTAL
 
 
 class FakePipelineTriggerAdapter(PipelineTriggerPort):
-    def __init__(self):
+    def __init__(self, client: httpx.AsyncClient):
+        self._client = client
+        self._tasks: set[asyncio.Task[None]] = set()
         self._callback_url = os.environ["LOADTEST_CALLBACK_URL"].rstrip("/")
         self._internal_secret = os.environ["INTERNAL_SECRET"]
         self._fail_marker = os.environ["LOADTEST_PIPELINE_FAIL_MARKER"]
@@ -37,59 +40,77 @@ class FakePipelineTriggerAdapter(PipelineTriggerPort):
     async def trigger(self, command: PipelineTriggerCommand) -> None:
         mode = self._mode_for(command)
         FAKE_PIPELINE_TRIGGER_TOTAL.labels(mode=mode).inc()
-        asyncio.create_task(self._run_pipeline(command))
+        task = asyncio.create_task(self._run_pipeline(command))
+        self._tasks.add(task)
+        task.add_done_callback(self._pipeline_finished)
+
+    async def aclose(self) -> None:
+        tasks = list(self._tasks)
+        for task in tasks:
+            task.cancel()
+        await asyncio.gather(*tasks, return_exceptions=True)
+
+    def _pipeline_finished(self, task: asyncio.Task[None]) -> None:
+        self._tasks.discard(task)
+        if task.cancelled():
+            return
+        error = task.exception()
+        if error:
+            logging.getLogger(__name__).error(
+                "fake pipeline callback failed",
+                exc_info=error,
+            )
 
     async def _run_pipeline(self, command: PipelineTriggerCommand) -> None:
-        async with httpx.AsyncClient(timeout=30) as client:
-            mode = self._mode_for(command)
-            await self._checkpoint_or_fail(client, command, CompositionStage.EXTRACTING_FRAMES)
-            if mode == "fail" and self._fail_stage == CompositionStage.EXTRACTING_FRAMES:
-                return
+        mode = self._mode_for(command)
+        await self._checkpoint_or_fail(self._client, command, CompositionStage.EXTRACTING_FRAMES)
+        if mode == "fail" and self._fail_stage == CompositionStage.EXTRACTING_FRAMES:
+            return
 
-            await self._checkpoint_or_fail(
-                client,
-                command,
-                CompositionStage.ANALYZING,
-                {"durations_ms": command.durations_ms},
-            )
-            if mode == "fail" and self._fail_stage == CompositionStage.ANALYZING:
-                return
+        await self._checkpoint_or_fail(
+            self._client,
+            command,
+            CompositionStage.ANALYZING,
+            {"durations_ms": command.durations_ms},
+        )
+        if mode == "fail" and self._fail_stage == CompositionStage.ANALYZING:
+            return
 
-            await self._checkpoint_or_fail(
-                client,
-                command,
-                CompositionStage.GENERATING_DRAFT,
-                {"spec": command.spec or {"mode": "loadtest"}},
-            )
-            if mode == "fail" and self._fail_stage == CompositionStage.GENERATING_DRAFT:
-                return
+        await self._checkpoint_or_fail(
+            self._client,
+            command,
+            CompositionStage.GENERATING_DRAFT,
+            {"spec": command.spec or {"mode": "loadtest"}},
+        )
+        if mode == "fail" and self._fail_stage == CompositionStage.GENERATING_DRAFT:
+            return
 
-            await self._checkpoint_or_fail(client, command, CompositionStage.COMPOSITING)
-            if mode == "fail" and self._fail_stage == CompositionStage.COMPOSITING:
-                return
+        await self._checkpoint_or_fail(self._client, command, CompositionStage.COMPOSITING)
+        if mode == "fail" and self._fail_stage == CompositionStage.COMPOSITING:
+            return
 
-            await self._checkpoint_or_fail(client, command, CompositionStage.BUILDING_GIF)
-            if mode == "fail" and self._fail_stage == CompositionStage.BUILDING_GIF:
-                return
+        await self._checkpoint_or_fail(self._client, command, CompositionStage.BUILDING_GIF)
+        if mode == "fail" and self._fail_stage == CompositionStage.BUILDING_GIF:
+            return
 
-            await asyncio.sleep(self._completion_delay_seconds)
+        await asyncio.sleep(self._completion_delay_seconds)
 
-            if mode == "fail":
-                await self._post(
-                    client,
-                    f"/internal/compositions/{command.job_id}/fail",
-                    {"reason": "loadtest pipeline failure"},
-                )
-                return
-
+        if mode == "fail":
             await self._post(
-                client,
-                f"/internal/compositions/{command.job_id}/complete",
-                {
-                    "draft_key": f"compositions/{command.job_id}/draft.png",
-                    "result_key": f"compositions/{command.job_id}/result.gif",
-                },
+                self._client,
+                f"/internal/compositions/{command.job_id}/fail",
+                {"reason": "loadtest pipeline failure"},
             )
+            return
+
+        await self._post(
+            self._client,
+            f"/internal/compositions/{command.job_id}/complete",
+            {
+                "draft_key": f"compositions/{command.job_id}/draft.png",
+                "result_key": f"compositions/{command.job_id}/result.gif",
+            },
+        )
 
     def _mode_for(self, command: PipelineTriggerCommand) -> str:
         if self._fail_marker in command.gif_url:

@@ -4,6 +4,8 @@ import logging
 import time
 from collections.abc import Awaitable, Callable
 from datetime import datetime, timezone
+from logging.handlers import QueueHandler, QueueListener
+from queue import SimpleQueue
 
 from fastapi import Request, Response
 from prometheus_client import CONTENT_TYPE_LATEST, Counter, Gauge, Histogram, generate_latest
@@ -15,11 +17,29 @@ from shared.request_context import current_request_path
 request_timing_logger = logging.getLogger("gifgloo.request_timing")
 request_timing_logger.setLevel(logging.INFO)
 request_timing_logger.propagate = False
+request_timing_queue = SimpleQueue()
+request_timing_listener: QueueListener | None = None
 
 if not request_timing_logger.handlers:
-    request_timing_handler = logging.StreamHandler()
-    request_timing_handler.setFormatter(logging.Formatter("%(message)s"))
-    request_timing_logger.addHandler(request_timing_handler)
+    request_timing_logger.addHandler(QueueHandler(request_timing_queue))
+
+
+def start_request_timing_log_listener() -> None:
+    global request_timing_listener
+    if request_timing_listener is not None:
+        return
+    stream_handler = logging.StreamHandler()
+    stream_handler.setFormatter(logging.Formatter("%(message)s"))
+    request_timing_listener = QueueListener(request_timing_queue, stream_handler)
+    request_timing_listener.start()
+
+
+def stop_request_timing_log_listener() -> None:
+    global request_timing_listener
+    if request_timing_listener is None:
+        return
+    request_timing_listener.stop()
+    request_timing_listener = None
 
 
 HTTP_REQUESTS_TOTAL = Counter(
