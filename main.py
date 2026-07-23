@@ -1,6 +1,7 @@
+import asyncio
 import os
 import signal
-from contextlib import asynccontextmanager
+from contextlib import asynccontextmanager, suppress
 
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
@@ -10,6 +11,12 @@ load_dotenv(".env")
 
 from config.database import engine, Base, get_db
 from shared.fastapi_error_handler import register_error_handlers
+from shared.metrics import (
+    metrics_response,
+    mark_metrics_process_dead,
+    monitor_runtime_metrics,
+    record_http_metrics,
+)
 import user.adapter.outbound.persistence.models  # noqa: F401
 import composition.adapter.outbound.persistence.models  # noqa: F401
 import asset.adapter.outbound.models  # noqa: F401
@@ -17,8 +24,8 @@ import credit_account.adapter.outbound.models  # noqa: F401
 
 from composition.adapter.inbound.fastapi.composition_router import router as composition_router
 from composition.adapter.inbound.fastapi.composition_internal_router import router as composition_internal_router
-from composition.adapter.outbound.persistence.sqlalchemy_composition_repository import SqlAlchemyCompositionRepository
 from composition.adapter.outbound.aws.lambda_pipeline_trigger_adapter import LambdaPipelineTriggerAdapter
+from composition.adapter.outbound.persistence.sqlalchemy_composition_repository import SqlAlchemyCompositionRepository
 from composition.application.ports.outbound.aws.pipeline_trigger_port import PipelineTriggerCommand
 from user.adapter.inbound.fastapi.oauth2 import router as oauth_router
 from user.adapter.inbound.fastapi.user_router import router as user_router
@@ -42,23 +49,32 @@ async def _recover_processing_jobs() -> None:
         repo = SqlAlchemyCompositionRepository(db)
         trigger = LambdaPipelineTriggerAdapter()
         for job in repo.find_all_processing():
-            await trigger.trigger(PipelineTriggerCommand(
-                job_id=job.id,
-                gif_url=job.gif_url,
-                target_key=f"compositions/{job.id}/target.png",
-                user_id=job.user_id,
-                resume_from=job.stage.value if job.stage else None,
-                durations_ms=job.durations_ms,
-                spec=job.spec,
-            ))
+            await trigger.trigger(
+                PipelineTriggerCommand(
+                    job_id=job.id,
+                    gif_url=job.gif_url,
+                    target_key=f"compositions/{job.id}/target.png",
+                    user_id=job.user_id,
+                    resume_from=job.stage.value if job.stage else None,
+                    durations_ms=job.durations_ms,
+                    spec=job.spec,
+                )
+            )
     finally:
         db.close()
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    await _recover_processing_jobs()
-    yield
+    runtime_metrics_task = asyncio.create_task(monitor_runtime_metrics())
+    try:
+        await _recover_processing_jobs()
+        yield
+    finally:
+        runtime_metrics_task.cancel()
+        with suppress(asyncio.CancelledError):
+            await runtime_metrics_task
+        mark_metrics_process_dead()
 
 
 Base.metadata.create_all(bind=engine)
@@ -78,12 +94,18 @@ app.add_middleware(
 
 
 @app.middleware("http")
+async def metrics_middleware(request: Request, call_next):
+    return await record_http_metrics(request, call_next)
+
+
+@app.middleware("http")
 async def shutdown_guard(request: Request, call_next):
     if is_shutting_down and request.method == "POST" and request.url.path == "/compositions":
         return JSONResponse({"detail": "서버가 재시작 중입니다. 잠시 후 다시 시도해주세요."}, status_code=503)
     return await call_next(request)
 
 
+app.get("/metrics")(metrics_response)
 app.include_router(composition_router)
 app.include_router(composition_internal_router)
 app.include_router(oauth_router)

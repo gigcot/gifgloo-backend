@@ -11,5 +11,5 @@ class GetCreditBalanceResult:
 
 class GetCreditBalancePort(ABC):
     @abstractmethod
-    def execute(self, command: GetCreditBalanceCommand) -> GetCreditBalanceResult:
+    async def execute(self, command: GetCreditBalanceCommand) -> GetCreditBalanceResult:
         pass

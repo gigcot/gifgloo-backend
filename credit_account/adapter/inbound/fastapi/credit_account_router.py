@@ -34,12 +34,12 @@ def _get_user_id(request: Request) -> str:
 # @router.post("/deduct")
 
 @router.get("/balance")
-def get_credit_balance(
+async def get_credit_balance(
     request: Request,
     service: GetCreditBalanceService = Depends(get_credit_balance_service),
 ):
     user_id = _get_user_id(request)
-    result = service.execute(GetCreditBalanceCommand(user_id))
+    result = await service.execute(GetCreditBalanceCommand(user_id))
     return {"balance": result.balance}
 
 # TODO: get_history — DI 연결 후 활성화

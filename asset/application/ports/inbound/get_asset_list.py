@@ -11,6 +11,8 @@ from shared.asset_category import AssetCategory
 class GetAssetListCommand:
     user_id: str
     category: Optional[AssetCategory] = None
+    limit: int = 50
+    offset: int = 0
 
 @dataclass
 class GetAssetListResult:
@@ -18,5 +20,5 @@ class GetAssetListResult:
 
 class GetAssetListPort(ABC):
     @abstractmethod
-    def execute(self, command: GetAssetListCommand) -> GetAssetListResult:
+    async def execute(self, command: GetAssetListCommand) -> GetAssetListResult:
         pass
