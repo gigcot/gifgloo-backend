@@ -1,11 +1,9 @@
 import asyncio
 import os
-import signal
 from contextlib import asynccontextmanager, suppress
 
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
 from dotenv import load_dotenv
 load_dotenv(".env")
 
@@ -31,17 +29,6 @@ from user.adapter.inbound.fastapi.oauth2 import router as oauth_router
 from user.adapter.inbound.fastapi.user_router import router as user_router
 from asset.adapter.inbound.fastapi.asset_router import router as asset_router
 from credit_account.adapter.inbound.fastapi.credit_account_router import router as credit_router
-
-is_shutting_down = False
-
-
-def _handle_sigterm(*_):
-    global is_shutting_down
-    is_shutting_down = True
-
-
-signal.signal(signal.SIGTERM, _handle_sigterm)
-
 
 async def _recover_processing_jobs() -> None:
     db = next(get_db())
@@ -96,13 +83,6 @@ app.add_middleware(
 @app.middleware("http")
 async def metrics_middleware(request: Request, call_next):
     return await record_http_metrics(request, call_next)
-
-
-@app.middleware("http")
-async def shutdown_guard(request: Request, call_next):
-    if is_shutting_down and request.method == "POST" and request.url.path == "/compositions":
-        return JSONResponse({"detail": "서버가 재시작 중입니다. 잠시 후 다시 시도해주세요."}, status_code=503)
-    return await call_next(request)
 
 
 app.get("/metrics")(metrics_response)
