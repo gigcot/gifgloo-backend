@@ -16,12 +16,6 @@ services:
       - node-exporter
       - postgres-exporter
       - nginx-exporter
-      - pushgateway
-
-  pushgateway:
-    image: prom/pushgateway:latest
-    ports:
-      - "127.0.0.1:9091:9091"
 
   grafana:
     image: grafana/grafana:latest
@@ -79,7 +73,7 @@ services:
   postgres-exporter:
     image: prometheuscommunity/postgres-exporter:latest
     environment:
-      DATA_SOURCE_NAME: "postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@host.docker.internal:${LOADTEST_POSTGRES_PORT}/${POSTGRES_DB}?sslmode=disable"
+      DATA_SOURCE_NAME: "postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@host.docker.internal:${POSTGRES_PORT:-5432}/${POSTGRES_DB}?sslmode=disable"
     extra_hosts:
       - "host.docker.internal:host-gateway"
     ports:

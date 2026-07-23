@@ -2,30 +2,12 @@ local.file_match "nginx" {
   path_targets = [
     {"__path__" = "/var/log/nginx/access.log", "job" = "nginx-access", "source" = "default"},
     {"__path__" = "/var/log/nginx/error.log", "job" = "nginx-error", "source" = "default"},
-    {"__path__" = "/var/log/nginx/gifgloo_loadtest_access.log", "job" = "nginx-access", "source" = "loadtest"},
-    {"__path__" = "/var/log/nginx/gifgloo_loadtest_error.log", "job" = "nginx-error", "source" = "loadtest"},
   ]
 }
 
 loki.source.file "nginx" {
   targets    = local.file_match.nginx.targets
-  forward_to = [loki.process.nginx.receiver]
-}
-
-loki.process "nginx" {
   forward_to = [loki.write.default.receiver]
-
-  stage.json {
-    expressions = {
-      "loadtest_run_id" = "",
-    }
-  }
-
-  stage.labels {
-    values = {
-      "loadtest_run_id" = "",
-    }
-  }
 }
 
 local.file_match "app" {
@@ -36,23 +18,7 @@ local.file_match "app" {
 
 loki.source.file "app" {
   targets    = local.file_match.app.targets
-  forward_to = [loki.process.app.receiver]
-}
-
-loki.process "app" {
   forward_to = [loki.write.default.receiver]
-
-  stage.json {
-    expressions = {
-      "loadtest_run_id" = "",
-    }
-  }
-
-  stage.labels {
-    values = {
-      "loadtest_run_id" = "",
-    }
-  }
 }
 
 local.file_match "postgres" {

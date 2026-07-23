@@ -1,9 +1,9 @@
 apiVersion: 1
 
 providers:
-  - name: Gifgloo Loadtest Dashboards
+  - name: Gifgloo Dashboards
     orgId: 1
-    folder: Gifgloo Loadtest
+    folder: Gifgloo
     type: file
     disableDeletion: false
     editable: true

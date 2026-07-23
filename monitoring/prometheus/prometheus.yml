@@ -23,15 +23,8 @@ scrape_configs:
       - targets:
           - nginx-exporter:9113
 
-  - job_name: fastapi-loadtest
+  - job_name: fastapi
     metrics_path: /metrics
     static_configs:
       - targets:
-          - host.docker.internal:8001
-
-  - job_name: locust-pushgateway
-    scrape_interval: 5s
-    honor_labels: true
-    static_configs:
-      - targets:
-          - pushgateway:9091
+          - host.docker.internal:8000

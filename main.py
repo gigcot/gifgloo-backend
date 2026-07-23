@@ -16,8 +16,6 @@ from shared.metrics import (
     mark_metrics_process_dead,
     monitor_runtime_metrics,
     record_http_metrics,
-    start_request_timing_log_listener,
-    stop_request_timing_log_listener,
 )
 import user.adapter.outbound.persistence.models  # noqa: F401
 import composition.adapter.outbound.persistence.models  # noqa: F401
@@ -68,7 +66,6 @@ async def _recover_processing_jobs() -> None:
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    start_request_timing_log_listener()
     runtime_metrics_task = asyncio.create_task(monitor_runtime_metrics())
     try:
         await _recover_processing_jobs()
@@ -77,7 +74,6 @@ async def lifespan(app: FastAPI):
         runtime_metrics_task.cancel()
         with suppress(asyncio.CancelledError):
             await runtime_metrics_task
-        stop_request_timing_log_listener()
         mark_metrics_process_dead()
 
 
