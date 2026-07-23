@@ -15,6 +15,5 @@ class AssetSaveCommand:
 
 class AssetSavePort(ABC):
     @abstractmethod
-    def save(self, command: AssetSaveCommand) -> str:
-        """저장 후 asset_id 반환"""
+    async def save(self, command: AssetSaveCommand) -> str:
         pass

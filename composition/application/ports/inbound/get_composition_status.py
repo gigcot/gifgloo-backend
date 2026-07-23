@@ -24,5 +24,5 @@ class GetCompositionStatusResult:
 
 class GetCompositionStatusPort(ABC):
     @abstractmethod
-    def execute(self, query: GetCompositionStatusQuery) -> GetCompositionStatusResult:
+    async def execute(self, query: GetCompositionStatusQuery) -> GetCompositionStatusResult:
         pass

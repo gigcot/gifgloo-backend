@@ -3,17 +3,19 @@ from composition.application.ports.inbound.get_composition_status import (
     GetCompositionStatusQuery,
     GetCompositionStatusResult,
 )
-from composition.application.ports.outbound.persistence.composition_repository import CompositionRepository
+from composition.application.ports.outbound.persistence.async_composition_status_reader import (
+    AsyncCompositionStatusReader,
+)
 from shared.exceptions import NotFoundException, AuthorizationException
 
 
 class GetCompositionStatusService(GetCompositionStatusPort):
-    def __init__(self, composition_repo: CompositionRepository):
-        self._composition_repo = composition_repo
+    def __init__(self, status_reader: AsyncCompositionStatusReader):
+        self._status_reader = status_reader
 
-    def execute(self, query: GetCompositionStatusQuery) -> GetCompositionStatusResult:
-        job = self._composition_repo.find_by_id(query.composition_job_id)
-        if not job:
+    async def execute(self, query: GetCompositionStatusQuery) -> GetCompositionStatusResult:
+        job = await self._status_reader.find_by_id(query.composition_job_id)
+        if job is None:
             raise NotFoundException("합성 작업을 찾을 수 없습니다")
         if job.user_id != query.user_id:
             raise AuthorizationException("접근 권한이 없습니다")

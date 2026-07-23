@@ -1,37 +1,45 @@
 from enum import Enum
 from asset.domain.value_objects.storage_url import StorageUrl
+from shared.asset_category import AssetCategory
 from shared.exceptions import AuthorizationException, InvalidStateException
+
 
 class AssetStatus(Enum):
     ACTIVE = "ACTIVE"
     DELETED = "DELETED"
 
+
 class AssetType(Enum):
     ANIMATED = "ANIMATED"
     STATIC = "STATIC"
 
+    @classmethod
+    def from_category(cls, category: AssetCategory) -> "AssetType":
+        if category in (AssetCategory.KLIPY_GIF, AssetCategory.COMPOSITION_RESULT):
+            return cls.ANIMATED
+        return cls.STATIC
+
+
 class Asset:
     def __init__(
-            self,
-            id: str,
-            user_id: str,
-            asset_type: AssetType,
-            storage_url: StorageUrl,
-        ):
+        self,
+        id: str,
+        user_id: str,
+        asset_type: AssetType,
+        storage_url: StorageUrl,
+    ):
         self.user_id = user_id
         self.id = id
         self.type = asset_type
         self.status = AssetStatus.ACTIVE
         self.storage_url = storage_url
-    
+
     def delete(self, user_id: str) -> None:
         if user_id != self.user_id:
             raise AuthorizationException("자신의 자산만 삭제할 수 있습니다")
         if self.status != AssetStatus.ACTIVE:
             raise InvalidStateException("이미 삭제된 자산입니다")
         self.status = AssetStatus.DELETED
-    
+
     def is_available_for_composition(self) -> bool:
         return self.status == AssetStatus.ACTIVE
-        
-    

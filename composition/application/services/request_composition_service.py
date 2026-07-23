@@ -17,10 +17,12 @@ from composition.application.ports.outbound.aws.storage_port import StoragePort,
 from composition.application.ports.outbound.aws.pipeline_trigger_port import PipelineTriggerPort, PipelineTriggerCommand
 from composition.application.ports.outbound.domain_bridges.credit_port import CreditPort
 from composition.application.ports.outbound.domain_bridges.user_verification_port import UserVerificationPort
-from composition.application.ports.outbound.persistence.composition_repository import CompositionRepository
-from composition.application.ports.outbound.domain_bridges.asset_save_port import AssetSavePort, AssetSaveCommand
+from composition.application.ports.outbound.persistence.async_composition_repository import AsyncCompositionRepository
+from composition.application.ports.outbound.persistence.async_transaction import AsyncTransaction
+from composition.application.ports.outbound.domain_bridges.asset_save_port import AssetSaveCommand, AssetSavePort
 from shared.asset_category import AssetCategory
 from composition.domain.aggregates.composition_job import CompositionJob
+from shared.metrics import COMPOSITION_CREATED_TOTAL, CREDIT_DEDUCT_TOTAL, CREDIT_REFUND_TOTAL
 
 
 class RequestCompositionService(RequestCompositionPort):
@@ -32,7 +34,8 @@ class RequestCompositionService(RequestCompositionPort):
         storage: StoragePort,
         asset_save: AssetSavePort,
         pipeline_trigger: PipelineTriggerPort,
-        composition_repo: CompositionRepository,
+        composition_repo: AsyncCompositionRepository,
+        transaction: AsyncTransaction,
     ):
         self._user_verification = user_verification
         self._credit = credit
@@ -41,15 +44,19 @@ class RequestCompositionService(RequestCompositionPort):
         self._asset_save = asset_save
         self._pipeline_trigger = pipeline_trigger
         self._composition_repo = composition_repo
+        self._transaction = transaction
 
     async def execute(self, command: RequestCompositionCommand) -> RequestCompositionResult:
-        if not self._user_verification.is_active_user(command.user_id):
+        if not await self._user_verification.is_active_user(command.user_id):
             raise AuthorizationException("유효하지 않은 유저입니다")
 
-        if not self._credit.has_enough_credit(command.user_id):
+        if not await self._credit.has_enough_credit(command.user_id):
             raise BusinessRuleException("크레딧이 부족합니다")
 
         _validate_image_format(command.target_bytes)
+
+        # Release the read transaction before awaiting remote feasibility and storage calls.
+        await self._transaction.rollback()
 
         feasibility = await self._feasibility.check(FeasibilityCheckCommand(gif_url=command.gif_url))
         if not feasibility.ok:
@@ -71,22 +78,33 @@ class RequestCompositionService(RequestCompositionPort):
 
         job.source_gif_url = command.gif_url
         job.target_url = target_url
-        job.source_gif_asset_id = self._asset_save.save(
-            AssetSaveCommand(user_id=command.user_id, category=AssetCategory.KLIPY_GIF, url=command.gif_url)
-        )
-        job.target_asset_id = self._asset_save.save(
-            AssetSaveCommand(user_id=command.user_id, category=AssetCategory.USER_UPLOAD, url=target_url)
-        )
-
-        job.start_processing()
-        self._composition_repo.save(job)
-
         try:
-            self._credit.deduct(command.user_id)
-        except Exception as e:
-            job.fail(str(e))
-            self._composition_repo.save(job)
-            raise BusinessRuleException(str(e))
+            job.source_gif_asset_id = await self._asset_save.save(
+                AssetSaveCommand(user_id=command.user_id, category=AssetCategory.KLIPY_GIF, url=command.gif_url)
+            )
+            job.target_asset_id = await self._asset_save.save(
+                AssetSaveCommand(user_id=command.user_id, category=AssetCategory.USER_UPLOAD, url=target_url)
+            )
+
+            job.start_processing()
+            await self._composition_repo.add(job)
+            COMPOSITION_CREATED_TOTAL.inc()
+
+            try:
+                await self._credit.deduct(command.user_id)
+                CREDIT_DEDUCT_TOTAL.inc()
+            except Exception as e:
+                job.fail(str(e))
+                await self._composition_repo.update(job)
+                await self._transaction.commit()
+                raise BusinessRuleException(str(e))
+
+            await self._transaction.commit()
+        except BusinessRuleException:
+            raise
+        except Exception:
+            await self._transaction.rollback()
+            raise
 
         try:
             await self._pipeline_trigger.trigger(
@@ -98,9 +116,11 @@ class RequestCompositionService(RequestCompositionPort):
                 )
             )
         except Exception as e:
-            self._credit.refund(command.user_id)
+            await self._credit.refund(command.user_id)
+            CREDIT_REFUND_TOTAL.inc()
             job.fail(str(e))
-            self._composition_repo.save(job)
+            await self._composition_repo.update(job)
+            await self._transaction.commit()
             raise
 
         return RequestCompositionResult(composition_job_id=job.id)

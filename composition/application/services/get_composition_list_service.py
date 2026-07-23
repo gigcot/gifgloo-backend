@@ -1,6 +1,8 @@
 from dataclasses import dataclass
 
-from composition.application.ports.outbound.persistence.composition_repository import CompositionRepository
+from composition.application.ports.outbound.persistence.async_composition_repository import (
+    AsyncCompositionRepository,
+)
 from composition.domain.value_objects.composition_status import CompositionStatus
 
 
@@ -15,11 +17,16 @@ class CompositionJobSummary:
 
 
 class GetCompositionListService:
-    def __init__(self, composition_repo: CompositionRepository):
+    def __init__(self, composition_repo: AsyncCompositionRepository):
         self._composition_repo = composition_repo
 
-    def execute(self, user_id: str) -> list[CompositionJobSummary]:
-        jobs = self._composition_repo.find_all_by_user_id(user_id)
+    async def execute(
+        self,
+        user_id: str,
+        limit: int,
+        offset: int,
+    ) -> list[CompositionJobSummary]:
+        jobs = await self._composition_repo.find_all_by_user_id(user_id, limit, offset)
         return [
             CompositionJobSummary(
                 job_id=job.id,
