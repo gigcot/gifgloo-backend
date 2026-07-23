@@ -23,6 +23,9 @@ from composition.application.services.get_composition_status_service import GetC
 from composition.application.services.pipeline_callback_service import PipelineCallbackService
 from composition.application.services.request_composition_service import RequestCompositionService
 from config.database import AsyncSessionLocal, get_async_db
+from credit_account.adapter.outbound.async_user_verification import (
+    AsyncUserVerificationAdapter as CreditUserVerificationAdapter,
+)
 from credit_account.adapter.outbound.sqlalchemy_async_credit_account_repository import (
     SqlAlchemyAsyncCreditAccountRepository,
 )
@@ -38,7 +41,7 @@ def _make_async_verify_user_service(db: AsyncSession) -> AsyncVerifyUserService:
 def _make_async_credit_adapter(db: AsyncSession) -> AsyncCreditAdapter:
     return AsyncCreditAdapter(
         AsyncCreditService(
-            user_verification=_make_async_verify_user_service(db),
+            user_verification=CreditUserVerificationAdapter(_make_async_verify_user_service(db)),
             credit_account_repo=SqlAlchemyAsyncCreditAccountRepository(db),
         )
     )

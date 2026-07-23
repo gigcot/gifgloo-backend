@@ -30,6 +30,9 @@ from composition.application.services.get_composition_list_service import GetCom
 from composition.application.services.pipeline_callback_service import PipelineCallbackService
 from user.adapter.outbound.persistence.sqlalchemy_async_user_repository import SqlAlchemyAsyncUserRepository
 from user.application.services.async_verify_user_service import AsyncVerifyUserService
+from credit_account.adapter.outbound.async_user_verification import (
+    AsyncUserVerificationAdapter as CreditUserVerificationAdapter,
+)
 from credit_account.adapter.outbound.sqlalchemy_async_credit_account_repository import SqlAlchemyAsyncCreditAccountRepository
 from credit_account.application.services.async_credit_service import AsyncCreditService
 from asset.adapter.outbound.sqlalchemy_async_asset_repository import SqlAlchemyAsyncAssetRepository
@@ -48,7 +51,7 @@ def _make_async_verify_user_service(db: AsyncSession) -> AsyncVerifyUserService:
 def _make_async_credit_adapter(db: AsyncSession) -> AsyncCreditAdapter:
     return AsyncCreditAdapter(
         AsyncCreditService(
-            user_verification=_make_async_verify_user_service(db),
+            user_verification=CreditUserVerificationAdapter(_make_async_verify_user_service(db)),
             credit_account_repo=SqlAlchemyAsyncCreditAccountRepository(db),
         )
     )

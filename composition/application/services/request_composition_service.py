@@ -15,12 +15,11 @@ def _validate_image_format(data: bytes) -> None:
 from composition.application.ports.outbound.aws.feasibility_check_port import FeasibilityCheckPort, FeasibilityCheckCommand
 from composition.application.ports.outbound.aws.storage_port import StoragePort, StorageCategory
 from composition.application.ports.outbound.aws.pipeline_trigger_port import PipelineTriggerPort, PipelineTriggerCommand
-from composition.application.ports.outbound.domain_bridges.async_credit_port import AsyncCreditPort
-from composition.application.ports.outbound.domain_bridges.async_user_verification_port import AsyncUserVerificationPort
+from composition.application.ports.outbound.domain_bridges.credit_port import CreditPort
+from composition.application.ports.outbound.domain_bridges.user_verification_port import UserVerificationPort
 from composition.application.ports.outbound.persistence.async_composition_repository import AsyncCompositionRepository
 from composition.application.ports.outbound.persistence.async_transaction import AsyncTransaction
-from composition.application.ports.outbound.domain_bridges.async_asset_save_port import AsyncAssetSavePort
-from composition.application.ports.outbound.domain_bridges.asset_save_port import AssetSaveCommand
+from composition.application.ports.outbound.domain_bridges.asset_save_port import AssetSaveCommand, AssetSavePort
 from shared.asset_category import AssetCategory
 from composition.domain.aggregates.composition_job import CompositionJob
 from shared.metrics import COMPOSITION_CREATED_TOTAL, CREDIT_DEDUCT_TOTAL, CREDIT_REFUND_TOTAL
@@ -29,11 +28,11 @@ from shared.metrics import COMPOSITION_CREATED_TOTAL, CREDIT_DEDUCT_TOTAL, CREDI
 class RequestCompositionService(RequestCompositionPort):
     def __init__(
         self,
-        user_verification: AsyncUserVerificationPort,
-        credit: AsyncCreditPort,
+        user_verification: UserVerificationPort,
+        credit: CreditPort,
         feasibility: FeasibilityCheckPort,
         storage: StoragePort,
-        asset_save: AsyncAssetSavePort,
+        asset_save: AssetSavePort,
         pipeline_trigger: PipelineTriggerPort,
         composition_repo: AsyncCompositionRepository,
         transaction: AsyncTransaction,

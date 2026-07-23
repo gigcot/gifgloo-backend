@@ -12,7 +12,7 @@ from composition.application.services.get_composition_list_service import GetCom
 from composition.application.services.get_composition_status_service import GetCompositionStatusService
 from composition.application.services.request_composition_service import RequestCompositionService
 from composition.domain.value_objects.composition_status import CompositionStatus
-from config.composition_loadtest import (
+from config.composition import (
     get_composition_list_service,
     get_composition_status_service,
     get_request_composition_service,

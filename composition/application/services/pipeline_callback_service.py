@@ -4,12 +4,11 @@ from composition.application.ports.outbound.persistence.async_composition_reposi
     AsyncCompositionRepository,
 )
 from composition.application.ports.outbound.persistence.async_transaction import AsyncTransaction
-from composition.application.ports.outbound.domain_bridges.asset_save_port import AssetSaveCommand
-from composition.application.ports.outbound.domain_bridges.async_asset_save_port import AsyncAssetSavePort
+from composition.application.ports.outbound.domain_bridges.asset_save_port import AssetSaveCommand, AssetSavePort
 from composition.application.ports.outbound.aws.storage_port import StoragePort
-from composition.application.ports.outbound.domain_bridges.async_credit_port import AsyncCreditPort
-from composition.application.ports.outbound.domain_bridges.async_user_verification_port import (
-    AsyncUserVerificationPort,
+from composition.application.ports.outbound.domain_bridges.credit_port import CreditPort
+from composition.application.ports.outbound.domain_bridges.user_verification_port import (
+    UserVerificationPort,
 )
 from composition.domain.value_objects.composition_stage import CompositionStage
 from composition.domain.value_objects.composition_status import CompositionStatus
@@ -29,10 +28,10 @@ class PipelineCallbackService:
     def __init__(
         self,
         composition_repo: AsyncCompositionRepository,
-        asset_save: AsyncAssetSavePort,
+        asset_save: AssetSavePort,
         storage: StoragePort,
-        credit: AsyncCreditPort,
-        user_verification: AsyncUserVerificationPort,
+        credit: CreditPort,
+        user_verification: UserVerificationPort,
         transaction: AsyncTransaction,
     ):
         self._composition_repo = composition_repo

@@ -7,6 +7,7 @@
 EC2에서 `.env.loadtest`를 작성한 뒤 실행한다.
 
 ```bash
+pip install -r load_test/requirements.txt
 docker compose --env-file .env.loadtest -f load_test/docker-compose.yml up -d db
 python load_test/reset.py
 python load_test/seed.py

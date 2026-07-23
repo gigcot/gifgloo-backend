@@ -1,8 +1,8 @@
-from composition.application.ports.outbound.domain_bridges.async_credit_port import AsyncCreditPort
+from composition.application.ports.outbound.domain_bridges.credit_port import CreditPort
 from credit_account.application.services.async_credit_service import AsyncCreditService
 
 
-class AsyncCreditAdapter(AsyncCreditPort):
+class AsyncCreditAdapter(CreditPort):
     def __init__(self, credit_service: AsyncCreditService):
         self._credit_service = credit_service
 
