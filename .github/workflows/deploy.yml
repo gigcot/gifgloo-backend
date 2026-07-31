@@ -47,11 +47,9 @@ jobs:
               - 'tests/composition/unit_tests/**'
               - 'tests/integration_tests/**'
             lambda_ai:
-              - '.github/workflows/deploy.yml'
               - 'lambda/deploy.sh'
               - 'lambda/ai_processor/**'
             lambda_gif:
-              - '.github/workflows/deploy.yml'
               - 'lambda/deploy.sh'
               - 'lambda/build_layer.sh'
               - 'lambda/gif_processor/**'
@@ -222,7 +220,7 @@ jobs:
             --group-id "${{ secrets.AWS_SECURITY_GROUP_ID }}" \
             --protocol tcp \
             --port 22 \
-            --cidr "${{ steps.ip.outputs.ipv4 }}/32"
+            --cidr "${{ steps.ip.outputs.ipv4 }}/32" || true
 
       - name: Upload production deployment files
         uses: appleboy/scp-action@v0.1.7
@@ -243,7 +241,9 @@ jobs:
           script_stop: true
           script: |
             cd ~/gifgloo-backend
-            echo "${{ secrets.GHCR_TOKEN }}" | docker login ghcr.io -u "${{ secrets.GHCR_USER }}" --password-stdin
+            if [ -n "${{ secrets.GHCR_USER }}" ] && [ -n "${{ secrets.GHCR_TOKEN }}" ]; then
+              echo "${{ secrets.GHCR_TOKEN }}" | docker login ghcr.io -u "${{ secrets.GHCR_USER }}" --password-stdin
+            fi
             export BACKEND_IMAGE="${{ env.IMAGE_NAME }}:${{ env.IMAGE_TAG }}"
             sudo systemctl stop gifgloo || true
             sudo systemctl disable gifgloo || true
@@ -252,7 +252,9 @@ jobs:
             docker compose -f docker-compose.prod.yml up -d app
             docker compose --env-file .env -f monitoring/docker-compose.yml up -d
             docker image prune -f
-            docker logout ghcr.io
+            if [ -n "${{ secrets.GHCR_USER }}" ] && [ -n "${{ secrets.GHCR_TOKEN }}" ]; then
+              docker logout ghcr.io
+            fi
 
       - name: Revoke runner SSH access
         if: always()
@@ -299,7 +301,7 @@ jobs:
 
       - name: Deploy gif processor Lambda
         if: needs.changes.outputs.lambda_gif == 'true'
-        run: bash lambda/deploy.sh gif
+        run: bash lambda/deploy.sh gif --function-only
 
       - name: Deploy ai processor Lambda
         if: needs.changes.outputs.lambda_ai == 'true'
