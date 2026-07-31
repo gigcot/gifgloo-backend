@@ -1,0 +1,8 @@
+services:
+  app:
+    image: ${BACKEND_IMAGE}
+    container_name: gifgloo-backend
+    network_mode: host
+    env_file:
+      - .env
+    restart: unless-stopped
