@@ -151,6 +151,7 @@ jobs:
       - name: Validate production compose
         if: needs.changes.outputs.app == 'true'
         run: |
+          touch .env
           BACKEND_IMAGE="${{ env.IMAGE_NAME }}:${{ env.IMAGE_TAG }}" docker compose -f docker-compose.prod.yml config --quiet
           docker compose -f monitoring/docker-compose.yml config --quiet
 
