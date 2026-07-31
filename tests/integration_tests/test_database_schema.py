@@ -11,7 +11,7 @@ import credit_account.adapter.outbound.models  # noqa: F401
 import user.adapter.outbound.persistence.models  # noqa: F401
 from asset.adapter.outbound.models import AssetModel
 from composition.adapter.outbound.persistence.models import CompositionJobModel
-from config.database import Base, SessionLocal, engine
+from config.database import SessionLocal, engine
 from credit_account.adapter.outbound.models import CreditAccountModel, CreditTransactionModel
 from user.adapter.outbound.persistence.models import UserModel
 
@@ -22,7 +22,6 @@ class DatabaseSchemaIntegrationTest(unittest.TestCase):
         database_url = os.environ["DATABASE_URL"]
         if "gifgloo_test" not in database_url:
             raise RuntimeError("DATABASE_URL must point to gifgloo_test for integration tests")
-        Base.metadata.create_all(bind=engine)
 
     def test_expected_tables_exist(self):
         tables = set(inspect(engine).get_table_names())

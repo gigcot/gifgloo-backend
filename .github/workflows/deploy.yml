@@ -32,6 +32,8 @@ jobs:
               - 'Dockerfile'
               - '.dockerignore'
               - 'docker-compose.prod.yml'
+              - 'alembic.ini'
+              - 'migrations/**'
               - 'requirements.txt'
               - 'main.py'
               - 'asset/**'
@@ -125,6 +127,7 @@ jobs:
             payment \
             shared \
             user \
+            migrations \
             lambda/ai_processor \
             lambda/gif_processor \
             tests/api_tests \
@@ -137,6 +140,10 @@ jobs:
       - name: Run API smoke tests
         if: needs.changes.outputs.app == 'true'
         run: python -m unittest discover -s tests/api_tests -p 'test_*.py'
+
+      - name: Run database migrations
+        if: needs.changes.outputs.app == 'true'
+        run: alembic upgrade head
 
       - name: Run database integration tests
         if: needs.changes.outputs.app == 'true'
@@ -255,6 +262,7 @@ jobs:
             sudo systemctl disable gifgloo || true
             mkdir -p /tmp/gifgloo-node-exporter
             docker compose -f docker-compose.prod.yml pull app
+            docker compose -f docker-compose.prod.yml run --rm --no-deps app alembic upgrade head
             docker compose -f docker-compose.prod.yml up -d app
             docker compose --env-file .env -f monitoring/docker-compose.yml up -d
             docker image prune -f

@@ -7,7 +7,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from dotenv import load_dotenv
 load_dotenv(".env")
 
-from config.database import engine, Base, get_db
+from config.database import get_db
 from shared.fastapi_error_handler import register_error_handlers
 from shared.metrics import (
     metrics_response,
@@ -65,8 +65,6 @@ async def lifespan(app: FastAPI):
             await runtime_metrics_task
         mark_metrics_process_dead()
 
-
-Base.metadata.create_all(bind=engine)
 
 app = FastAPI(lifespan=lifespan)
 register_error_handlers(app)
