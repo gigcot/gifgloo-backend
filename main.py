@@ -25,6 +25,7 @@ from composition.adapter.inbound.fastapi.composition_internal_router import rout
 from composition.adapter.outbound.aws.lambda_pipeline_trigger_adapter import LambdaPipelineTriggerAdapter
 from composition.adapter.outbound.persistence.sqlalchemy_composition_repository import SqlAlchemyCompositionRepository
 from composition.application.ports.outbound.aws.pipeline_trigger_port import PipelineTriggerCommand
+from composition.domain.value_objects.composition_policy import MAX_FRAMES
 from user.adapter.inbound.fastapi.oauth2 import router as oauth_router
 from user.adapter.inbound.fastapi.user_router import router as user_router
 from asset.adapter.inbound.fastapi.asset_router import router as asset_router
@@ -42,6 +43,7 @@ async def _recover_processing_jobs() -> None:
                     gif_url=job.gif_url,
                     target_key=f"compositions/{job.id}/target.png",
                     user_id=job.user_id,
+                    max_frames=MAX_FRAMES,
                     resume_from=job.stage.value if job.stage else None,
                     durations_ms=job.durations_ms,
                     spec=job.spec,
