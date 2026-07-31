@@ -16,7 +16,6 @@ from openai import OpenAI
 BUCKET_NAME = os.environ.get("R2_BUCKET_NAME", "gifgloo")
 IMAGE_MODEL = "gpt-image-1.5"
 OUTPUT_SIZE = "1024x1024"
-MAX_FRAMES = 10
 GIF_PROCESSOR_FUNCTION = "gifgloo-gif-processor"
 
 INTERNAL_SECRET = os.environ.get("INTERNAL_SECRET", "")
@@ -355,7 +354,7 @@ def run_pipeline(event: dict) -> None:
             gif_result = _invoke_gif_processor({
                 "action": "extract_frames",
                 "gif_url": gif_url,
-                "max_frames": MAX_FRAMES,
+                "max_frames": event["max_frames"],
                 "job_id": job_id,
             })
             durations_ms = gif_result["durations_ms"]

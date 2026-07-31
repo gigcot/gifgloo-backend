@@ -113,6 +113,7 @@ class RequestCompositionService(RequestCompositionPort):
                     gif_url=command.gif_url,
                     target_key=target_key,
                     user_id=command.user_id,
+                    max_frames=MAX_FRAMES,
                 )
             )
         except Exception as e:

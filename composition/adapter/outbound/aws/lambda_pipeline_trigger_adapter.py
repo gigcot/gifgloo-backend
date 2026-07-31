@@ -20,6 +20,7 @@ class LambdaPipelineTriggerAdapter(PipelineTriggerPort):
             "gif_url": command.gif_url,
             "user_id": command.user_id,
             "callback_url": self._callback_url,
+            "max_frames": command.max_frames,
         }
         if command.resume_from:
             payload["resume_from"] = command.resume_from

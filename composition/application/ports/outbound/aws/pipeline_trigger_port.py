@@ -8,6 +8,7 @@ class PipelineTriggerCommand:
     gif_url: str
     target_key: str
     user_id: str
+    max_frames: int
     resume_from: str | None = None
     frame_keys: list[str] | None = None
     durations_ms: list[int] | None = None
