@@ -26,6 +26,7 @@ from composition.adapter.inbound.fastapi.composition_internal_router import (  #
 )
 from composition.adapter.inbound.fastapi.composition_router import router as composition_router  # noqa: E402
 from config.composition import get_pipeline_callback_service, get_request_composition_service  # noqa: E402
+from shared.metrics import normalized_path  # noqa: E402
 
 
 class _RequestCompositionResult:
@@ -117,3 +118,26 @@ class CompositionRoutesTest(unittest.TestCase):
         )
 
         self.assertEqual(response.status_code, 403)
+
+
+class MetricsPathTest(unittest.TestCase):
+    def test_known_paths_keep_low_cardinality_labels(self):
+        self.assertEqual(normalized_path("/credits/balance"), "/credits/balance")
+        self.assertEqual(
+            normalized_path("/compositions/job-1/status"),
+            "/compositions/{composition_job_id}/status",
+        )
+        self.assertEqual(
+            normalized_path("/internal/compositions/job-1/fail"),
+            "/internal/compositions/{job_id}/fail",
+        )
+        self.assertEqual(normalized_path("/assets/asset-1"), "/assets/{asset_id}")
+
+    def test_unknown_paths_share_one_metrics_label(self):
+        self.assertEqual(normalized_path("/"), "/unknown")
+        self.assertEqual(normalized_path("/.env"), "/unknown")
+        self.assertEqual(normalized_path("/x.php"), "/unknown")
+        self.assertEqual(
+            normalized_path("/wp-content/plugins/hellopress/wp_filemanager.php"),
+            "/unknown",
+        )

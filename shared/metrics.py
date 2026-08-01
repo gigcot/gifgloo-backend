@@ -161,6 +161,23 @@ FASTAPI_WORKER_PROCESSES = Gauge(
     multiprocess_mode="livesum",
 )
 
+KNOWN_STATIC_PATHS = frozenset({
+    "/assets",
+    "/compositions",
+    "/credits/balance",
+    "/docs",
+    "/metrics",
+    "/oauth/google",
+    "/oauth/google/callback",
+    "/oauth/kakao",
+    "/oauth/kakao/callback",
+    "/openapi.json",
+    "/redoc",
+    "/users/me",
+})
+
+INTERNAL_COMPOSITION_ACTIONS = frozenset({"checkpoint", "complete", "fail"})
+
 
 def _resident_memory_bytes() -> int:
     if os.path.exists("/proc/self/statm"):
@@ -225,14 +242,25 @@ def route_path(request: Request) -> str:
 
 
 def normalized_path(path: str) -> str:
+    normalized = "/" + path.strip("/")
+    if normalized in KNOWN_STATIC_PATHS:
+        return normalized
+
     parts = path.strip("/").split("/")
     if len(parts) == 2 and parts[0] == "compositions":
         return "/compositions/{composition_job_id}"
     if len(parts) == 3 and parts[0] == "compositions" and parts[2] == "status":
         return "/compositions/{composition_job_id}/status"
-    if len(parts) == 4 and parts[0] == "internal" and parts[1] == "compositions":
+    if (
+        len(parts) == 4
+        and parts[0] == "internal"
+        and parts[1] == "compositions"
+        and parts[3] in INTERNAL_COMPOSITION_ACTIONS
+    ):
         return f"/internal/compositions/{{job_id}}/{parts[3]}"
-    return path
+    if len(parts) == 2 and parts[0] == "assets":
+        return "/assets/{asset_id}"
+    return "/unknown"
 
 
 async def record_http_metrics(
