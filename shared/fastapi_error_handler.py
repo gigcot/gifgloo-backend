@@ -10,6 +10,7 @@ from shared.exceptions import (
     InvalidStateException,
     BusinessRuleException,
     ValidationException,
+    ExternalServiceException,
     ConfirmationRequiredException,
 )
 
@@ -19,6 +20,7 @@ STATUS_MAP: dict[type[DomainException], int] = {
     InvalidStateException: 409,
     BusinessRuleException: 400,
     ValidationException: 422,
+    ExternalServiceException: 502,
     ConfirmationRequiredException: 422,
 }
 

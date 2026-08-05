@@ -32,6 +32,11 @@ class ValidationException(DomainException):
     pass
 
 
+class ExternalServiceException(DomainException):
+    """외부 서비스 호출 실패 → 502"""
+    pass
+
+
 class ConfirmationRequiredException(DomainException):
     """유저 확인 필요 → 422 + proposal"""
 

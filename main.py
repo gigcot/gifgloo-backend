@@ -19,6 +19,7 @@ import user.adapter.outbound.persistence.models  # noqa: F401
 import composition.adapter.outbound.persistence.models  # noqa: F401
 import asset.adapter.outbound.models  # noqa: F401
 import credit_account.adapter.outbound.models  # noqa: F401
+import payment.adapter.outbound.persistence.models  # noqa: F401
 
 from composition.adapter.inbound.fastapi.composition_router import router as composition_router
 from composition.adapter.inbound.fastapi.composition_internal_router import router as composition_internal_router
@@ -30,6 +31,8 @@ from user.adapter.inbound.fastapi.oauth2 import router as oauth_router
 from user.adapter.inbound.fastapi.user_router import router as user_router
 from asset.adapter.inbound.fastapi.asset_router import router as asset_router
 from credit_account.adapter.inbound.fastapi.credit_account_router import router as credit_router
+from payment.adapter.inbound.fastapi.payment_router import router as payment_router
+
 
 async def _recover_processing_jobs() -> None:
     db = next(get_db())
@@ -92,3 +95,4 @@ app.include_router(oauth_router)
 app.include_router(user_router)
 app.include_router(asset_router)
 app.include_router(credit_router)
+app.include_router(payment_router)

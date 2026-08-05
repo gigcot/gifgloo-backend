@@ -123,6 +123,11 @@ class CompositionRoutesTest(unittest.TestCase):
 class MetricsPathTest(unittest.TestCase):
     def test_known_paths_keep_low_cardinality_labels(self):
         self.assertEqual(normalized_path("/credits/balance"), "/credits/balance")
+        self.assertEqual(normalized_path("/payments/checkout"), "/payments/checkout")
+        self.assertEqual(
+            normalized_path("/payments/toss/callback"),
+            "/payments/toss/callback",
+        )
         self.assertEqual(
             normalized_path("/compositions/job-1/status"),
             "/compositions/{composition_job_id}/status",

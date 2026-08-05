@@ -172,6 +172,9 @@ KNOWN_STATIC_PATHS = frozenset({
     "/oauth/kakao",
     "/oauth/kakao/callback",
     "/openapi.json",
+    "/payments/checkout",
+    "/payments/products",
+    "/payments/toss/callback",
     "/redoc",
     "/users/me",
 })
