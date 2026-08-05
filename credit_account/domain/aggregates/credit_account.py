@@ -1,6 +1,7 @@
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from credit_account.domain.value_objects.credit_policy import CreditPolicy
+from credit_account.domain.value_objects.credit_source_type import CreditSourceType
 from credit_account.domain.value_objects.transaction_type import TransactionType
 from shared.exceptions import BusinessRuleException
 import uuid
@@ -10,6 +11,8 @@ import uuid
 class CreditTransaction:
     amount: int
     transaction_type: TransactionType
+    source_type: CreditSourceType | None = None
+    source_id: str | None = None
     id: str = field(default_factory=lambda: str(uuid.uuid4()))
     created_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
 
@@ -58,11 +61,22 @@ class CreditAccount:
         self.transactions.append(transaction)
         self._pending_transactions.append(transaction)
 
-    def charge(self, amount: int) -> None:
+    def charge(
+        self,
+        amount: int,
+        source_type: CreditSourceType | None = None,
+        source_id: str | None = None,
+    ) -> None:
+        if amount <= 0:
+            raise BusinessRuleException("충전 크레딧은 0보다 커야 합니다")
+        if (source_type is None) != (source_id is None):
+            raise BusinessRuleException("크레딧 출처 종류와 식별자는 함께 지정해야 합니다")
         self.balance += amount
         transaction = CreditTransaction(
             amount=amount,
             transaction_type=TransactionType.CHARGE,
+            source_type=source_type,
+            source_id=source_id,
         )
         self.transactions.append(transaction)
         self._pending_transactions.append(transaction)

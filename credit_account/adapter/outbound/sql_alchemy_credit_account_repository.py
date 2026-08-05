@@ -3,6 +3,7 @@ from sqlalchemy.orm import Session
 from credit_account.adapter.outbound.models import CreditAccountModel, CreditTransactionModel
 from credit_account.application.ports.outbound.persistence.credit_account_repository import CreditAccountRepositoryPort
 from credit_account.domain.aggregates.credit_account import CreditAccount, CreditTransaction
+from credit_account.domain.value_objects.credit_source_type import CreditSourceType
 from credit_account.domain.value_objects.transaction_type import TransactionType
 
 
@@ -37,6 +38,8 @@ class SqlAlchemyCreditAccountRepository(CreditAccountRepositoryPort):
                     id=t.id,
                     amount=t.amount,
                     transaction_type=TransactionType(t.transaction_type),
+                    source_type=CreditSourceType(t.source_type) if t.source_type else None,
+                    source_id=t.source_id,
                     created_at=t.created_at,
                 )
                 for t in model.transactions
@@ -49,5 +52,7 @@ class SqlAlchemyCreditAccountRepository(CreditAccountRepositoryPort):
             account_user_id=user_id,
             amount=tx.amount,
             transaction_type=tx.transaction_type.value,
+            source_type=tx.source_type.value if tx.source_type else None,
+            source_id=tx.source_id,
             created_at=tx.created_at,
         )

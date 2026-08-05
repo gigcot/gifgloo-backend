@@ -1,4 +1,4 @@
-from sqlalchemy import Column, String, Integer, DateTime, ForeignKey
+from sqlalchemy import Column, DateTime, ForeignKey, Integer, String, UniqueConstraint
 from sqlalchemy.orm import relationship
 
 from config.database import Base
@@ -15,11 +15,16 @@ class CreditAccountModel(Base):
 
 class CreditTransactionModel(Base):
     __tablename__ = "credit_transactions"
+    __table_args__ = (
+        UniqueConstraint("source_type", "source_id", name="uq_credit_transactions_source"),
+    )
 
     id = Column(String, primary_key=True)
     account_user_id = Column(String, ForeignKey("credit_accounts.user_id"), nullable=False)
     amount = Column(Integer, nullable=False)
     transaction_type = Column(String, nullable=False)
+    source_type = Column(String, nullable=True)
+    source_id = Column(String, nullable=True)
     created_at = Column(DateTime(timezone=True), nullable=False)
 
     account = relationship("CreditAccountModel", back_populates="transactions")

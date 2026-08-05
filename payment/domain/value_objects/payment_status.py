@@ -2,7 +2,12 @@ from enum import Enum
 
 
 class PaymentStatus(Enum):
-    PENDING    = "PENDING"
-    PROCESSING = "PROCESSING"
-    COMPLETED  = "COMPLETED"
-    FAILED     = "FAILED"
+    READY = "READY"
+    AUTHORIZED = "AUTHORIZED"
+    APPROVED = "APPROVED"
+    CANCELED = "CANCELED"
+    FAILED = "FAILED"
+
+    PENDING = "READY"
+    PROCESSING = "AUTHORIZED"
+    COMPLETED = "APPROVED"

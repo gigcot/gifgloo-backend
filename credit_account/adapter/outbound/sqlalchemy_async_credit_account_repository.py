@@ -6,6 +6,7 @@ from credit_account.application.ports.outbound.persistence.async_credit_account_
     AsyncCreditAccountRepository,
 )
 from credit_account.domain.aggregates.credit_account import CreditAccount, CreditTransaction
+from credit_account.domain.value_objects.credit_source_type import CreditSourceType
 
 
 class SqlAlchemyAsyncCreditAccountRepository(AsyncCreditAccountRepository):
@@ -48,11 +49,24 @@ class SqlAlchemyAsyncCreditAccountRepository(AsyncCreditAccountRepository):
             return None
         return CreditAccount(user_id=row.user_id, balance=row.balance, transactions=[])
 
+    async def exists_transaction_by_source(
+        self,
+        source_type: CreditSourceType,
+        source_id: str,
+    ) -> bool:
+        statement = select(CreditTransactionModel.id).where(
+            CreditTransactionModel.source_type == source_type.value,
+            CreditTransactionModel.source_id == source_id,
+        )
+        return (await self._session.execute(statement)).scalar_one_or_none() is not None
+
     def _tx_to_model(self, transaction: CreditTransaction, user_id: str) -> CreditTransactionModel:
         return CreditTransactionModel(
             id=transaction.id,
             account_user_id=user_id,
             amount=transaction.amount,
             transaction_type=transaction.transaction_type.value,
+            source_type=transaction.source_type.value if transaction.source_type else None,
+            source_id=transaction.source_id,
             created_at=transaction.created_at,
         )

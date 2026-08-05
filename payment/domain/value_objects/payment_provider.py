@@ -1,9 +1,7 @@
 from enum import Enum
 
 
-class PgType(Enum):
-    TOSS = "TOSS_PAY"
+class PaymentProvider(Enum):
     TOSS_PAY = "TOSS_PAY"
     TOSS_PAYMENTS = "TOSS_PAYMENTS"
-    KAKAO = "KAKAO_PAY"
     KAKAO_PAY = "KAKAO_PAY"
