@@ -63,6 +63,26 @@ class DatabaseSchemaIntegrationTest(unittest.TestCase):
         session = SessionLocal()
 
         try:
+            session.add(
+                PaymentModel(
+                    id=payment_id,
+                    user_id=user_id,
+                    provider="TOSS_PAY",
+                    order_id=order_id,
+                    amount=5000,
+                    currency="KRW",
+                    credit_amount=100,
+                    provider_payment_id=payment_id,
+                    provider_transaction_id=payment_id,
+                    status="APPROVED",
+                    created_at=now,
+                    updated_at=now,
+                    approved_at=now,
+                    credit_granted_at=now,
+                )
+            )
+            session.flush()
+
             session.add_all([
                 UserModel(
                     id=user_id,
@@ -85,22 +105,6 @@ class DatabaseSchemaIntegrationTest(unittest.TestCase):
                     source_type="PAYMENT",
                     source_id=payment_id,
                     created_at=now,
-                ),
-                PaymentModel(
-                    id=payment_id,
-                    user_id=user_id,
-                    provider="TOSS_PAY",
-                    order_id=order_id,
-                    amount=5000,
-                    currency="KRW",
-                    credit_amount=100,
-                    provider_payment_id=payment_id,
-                    provider_transaction_id=payment_id,
-                    status="APPROVED",
-                    created_at=now,
-                    updated_at=now,
-                    approved_at=now,
-                    credit_granted_at=now,
                 ),
                 PaymentInboxModel(
                     id=event_id,
