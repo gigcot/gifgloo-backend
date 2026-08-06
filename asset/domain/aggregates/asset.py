@@ -1,4 +1,5 @@
 from enum import Enum
+
 from asset.domain.value_objects.storage_url import StorageUrl
 from shared.asset_category import AssetCategory
 from shared.exceptions import AuthorizationException, InvalidStateException
@@ -26,13 +27,18 @@ class Asset:
         id: str,
         user_id: str,
         asset_type: AssetType,
+        category: AssetCategory,
         storage_url: StorageUrl,
+        status: AssetStatus = AssetStatus.ACTIVE,
+        share_token: str | None = None,
     ):
         self.user_id = user_id
         self.id = id
         self.type = asset_type
-        self.status = AssetStatus.ACTIVE
+        self.category = category
+        self.status = status
         self.storage_url = storage_url
+        self.share_token = share_token
 
     def delete(self, user_id: str) -> None:
         if user_id != self.user_id:
@@ -43,3 +49,11 @@ class Asset:
 
     def is_available_for_composition(self) -> bool:
         return self.status == AssetStatus.ACTIVE
+
+    def enable_sharing(self, share_token: str) -> None:
+        if self.category != AssetCategory.COMPOSITION_RESULT:
+            raise InvalidStateException("합성 결과만 공유할 수 있습니다")
+        if self.status != AssetStatus.ACTIVE:
+            raise InvalidStateException("삭제된 자산은 공유할 수 없습니다")
+        if self.share_token is None:
+            self.share_token = share_token

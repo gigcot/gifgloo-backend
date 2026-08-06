@@ -5,8 +5,22 @@ from sqlalchemy.orm import Session
 from asset.adapter.outbound.models import AssetModel
 from asset.application.ports.outbound.persistence.asset_repository import AssetRepositoryPort
 from shared.asset_category import AssetCategory
-from asset.application.dto import AssetDto, AssetResult
-from asset.domain.aggregates.asset import AssetStatus, AssetType
+from asset.application.dto import AssetDto
+from asset.domain.aggregates.asset import Asset, AssetStatus, AssetType
+from asset.domain.value_objects.storage_url import StorageUrl
+from shared.exceptions import NotFoundException
+
+
+def _to_domain(model: AssetModel) -> Asset:
+    return Asset(
+        id=model.id,
+        user_id=model.user_id,
+        asset_type=AssetType(model.asset_type),
+        category=AssetCategory(model.category),
+        storage_url=StorageUrl(model.storage_url or ""),
+        status=AssetStatus(model.status),
+        share_token=model.share_token,
+    )
 
 
 class SqlAlchemyAssetRepository(AssetRepositoryPort):
@@ -53,19 +67,22 @@ class SqlAlchemyAssetRepository(AssetRepositoryPort):
             raise ValueError("Asset을 찾을 수 없습니다")
         return model.storage_url or ""
 
-    def find_asset_by_id(self, asset_id: str) -> AssetResult:
+    def find_by_id(self, asset_id: str) -> Asset:
         model = self._session.get(AssetModel, asset_id)
         if not model:
-            raise ValueError("Asset을 찾을 수 없습니다")
-        return AssetResult(
-            id=model.id,
-            user_id=model.user_id,
-            asset_type=AssetType(model.asset_type),
-            storage_url=model.storage_url or "",
-        )
+            raise NotFoundException("자산을 찾을 수 없습니다")
+        return _to_domain(model)
 
-    def update_status(self, asset_id: str, status: AssetStatus) -> None:
-        model = self._session.get(AssetModel, asset_id)
-        if model:
-            model.status = status.value
-            self._session.commit()
+    def find_by_share_token(self, share_token: str) -> Asset:
+        model = self._session.query(AssetModel).filter(AssetModel.share_token == share_token).one_or_none()
+        if not model:
+            raise NotFoundException("공유 결과를 찾을 수 없습니다")
+        return _to_domain(model)
+
+    def update(self, asset: Asset) -> None:
+        model = self._session.get(AssetModel, asset.id)
+        if not model:
+            raise NotFoundException("자산을 찾을 수 없습니다")
+        model.status = asset.status.value
+        model.share_token = asset.share_token
+        self._session.commit()

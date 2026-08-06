@@ -2,13 +2,26 @@ import os
 from typing import Optional
 
 import jwt
-from fastapi import APIRouter, Depends, HTTPException, Query, Request
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response
 
+from asset.application.ports.inbound.create_share_link import CreateShareLinkCommand
 from asset.application.ports.inbound.delete import DeleteAssetCommand
+from asset.application.ports.inbound.download_asset import DownloadAssetCommand, DownloadSharedAssetQuery
 from asset.application.ports.inbound.get_asset_list import GetAssetListCommand
+from asset.application.ports.inbound.get_shared_asset import GetSharedAssetQuery
+from asset.application.services.create_share_link_service import CreateShareLinkService
 from asset.application.services.delete_asset_service import DeleteAssetService
+from asset.application.services.download_asset_service import DownloadAssetService, DownloadSharedAssetService
 from asset.application.services.get_asset_list_service import GetAssetListService
-from config.asset import get_asset_list_service, get_delete_asset_service
+from asset.application.services.get_shared_asset_service import GetSharedAssetService
+from config.asset import (
+    get_asset_list_service,
+    get_delete_asset_service,
+    get_create_share_link_service,
+    get_download_asset_service,
+    get_download_shared_asset_service,
+    get_shared_asset_service,
+)
 from shared.asset_category import AssetCategory
 
 router = APIRouter(prefix="/assets", tags=["assets"])
@@ -65,3 +78,49 @@ def delete_asset(
 ):
     user_id = _get_user_id(request)
     service.execute(DeleteAssetCommand(user_id, asset_id))
+
+
+@router.post("/{asset_id}/share")
+def create_share_link(
+    asset_id: str,
+    request: Request,
+    service: CreateShareLinkService = Depends(get_create_share_link_service),
+):
+    result = service.execute(CreateShareLinkCommand(_get_user_id(request), asset_id))
+    return {"share_token": result.share_token}
+
+
+@router.get("/{asset_id}/download")
+def download_asset(
+    asset_id: str,
+    request: Request,
+    service: DownloadAssetService = Depends(get_download_asset_service),
+):
+    result = service.execute(DownloadAssetCommand(_get_user_id(request), asset_id))
+    return Response(
+        content=result.data,
+        media_type="image/gif",
+        headers={"Content-Disposition": f'attachment; filename="gifgloo-{asset_id}.gif"'},
+    )
+
+
+@router.get("/shared/{share_token}")
+def get_shared_asset(
+    share_token: str,
+    service: GetSharedAssetService = Depends(get_shared_asset_service),
+):
+    result = service.execute(GetSharedAssetQuery(share_token))
+    return {"asset_id": result.asset_id, "result_url": result.result_url}
+
+
+@router.get("/shared/{share_token}/download")
+def download_shared_asset(
+    share_token: str,
+    service: DownloadSharedAssetService = Depends(get_download_shared_asset_service),
+):
+    result = service.execute(DownloadSharedAssetQuery(share_token))
+    return Response(
+        content=result.data,
+        media_type="image/gif",
+        headers={"Content-Disposition": 'attachment; filename="gifgloo.gif"'},
+    )

@@ -59,6 +59,7 @@ async def get_composition_list(
                 "source_gif_url": j.source_gif_url,
                 "target_url": j.target_url,
                 "result_url": j.result_url,
+                "result_asset_id": j.result_asset_id,
                 "created_at": j.created_at,
             }
             for j in jobs

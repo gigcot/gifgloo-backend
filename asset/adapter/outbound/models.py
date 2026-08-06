@@ -12,3 +12,4 @@ class AssetModel(Base):
     category = Column(String, nullable=False)
     storage_url = Column(String, nullable=True)
     status = Column(String, nullable=False)
+    share_token = Column(String, nullable=True, unique=True, index=True)

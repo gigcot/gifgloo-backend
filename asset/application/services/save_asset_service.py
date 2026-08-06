@@ -41,6 +41,7 @@ class SaveAssetService(SaveAssetPort):
             asset_id,
             command.user_id,
             asset_type,
+            command.category,
             StorageUrl(storage_url),
         )
 

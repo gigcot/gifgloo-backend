@@ -20,6 +20,7 @@ class AsyncCreateAssetFromUrlService:
             asset_id,
             user_id,
             AssetType.from_category(category),
+            category,
             StorageUrl(url),
         )
         await self._asset_repo.save(

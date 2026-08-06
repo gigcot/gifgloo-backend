@@ -2,8 +2,8 @@ from abc import ABC, abstractmethod
 from typing import Optional
 
 from shared.asset_category import AssetCategory
-from asset.application.dto import AssetDto, AssetResult
-from asset.domain.aggregates.asset import AssetStatus, AssetType
+from asset.application.dto import AssetDto
+from asset.domain.aggregates.asset import Asset, AssetStatus, AssetType
 
 
 class AssetRepositoryPort(ABC):
@@ -25,9 +25,13 @@ class AssetRepositoryPort(ABC):
         pass
 
     @abstractmethod
-    def find_asset_by_id(self, asset_id: str) -> AssetResult:
+    def find_by_id(self, asset_id: str) -> Asset:
         pass
 
     @abstractmethod
-    def update_status(self, asset_id: str, status: AssetStatus) -> None:
+    def find_by_share_token(self, share_token: str) -> Asset:
+        pass
+
+    @abstractmethod
+    def update(self, asset: Asset) -> None:
         pass

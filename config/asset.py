@@ -6,8 +6,15 @@ from asset.adapter.outbound.async_user_verification import AsyncUserVerification
 from asset.adapter.outbound.sql_alchemy_asset_repository import SqlAlchemyAssetRepository
 from asset.adapter.outbound.sqlalchemy_async_asset_repository import SqlAlchemyAsyncAssetRepository
 from asset.adapter.outbound.user_verification import UserVerificationAdapter
+from asset.adapter.outbound.r2_storage_adapter import R2DownloadAdapter
+from asset.application.services.create_share_link_service import CreateShareLinkService
 from asset.application.services.delete_asset_service import DeleteAssetService
+from asset.application.services.download_asset_service import (
+    DownloadAssetService,
+    DownloadSharedAssetService,
+)
 from asset.application.services.get_asset_list_service import GetAssetListService
+from asset.application.services.get_shared_asset_service import GetSharedAssetService
 from config.database import get_async_db, get_db
 from user.adapter.outbound.persistence.sqlalchemy_async_user_repository import SqlAlchemyAsyncUserRepository
 from user.adapter.outbound.persistence.sqlalchemy_user_repository import SqlAlchemyUserRepository
@@ -34,4 +41,30 @@ def get_delete_asset_service(db: Session = Depends(get_db)) -> DeleteAssetServic
     return DeleteAssetService(
         user_verification=_make_user_verification(db),
         asset_repo=SqlAlchemyAssetRepository(db),
+    )
+
+
+def get_create_share_link_service(db: Session = Depends(get_db)) -> CreateShareLinkService:
+    return CreateShareLinkService(
+        user_verification=_make_user_verification(db),
+        asset_repo=SqlAlchemyAssetRepository(db),
+    )
+
+
+def get_shared_asset_service(db: Session = Depends(get_db)) -> GetSharedAssetService:
+    return GetSharedAssetService(SqlAlchemyAssetRepository(db))
+
+
+def get_download_asset_service(db: Session = Depends(get_db)) -> DownloadAssetService:
+    return DownloadAssetService(
+        user_verification=_make_user_verification(db),
+        asset_repo=SqlAlchemyAssetRepository(db),
+        storage=R2DownloadAdapter(),
+    )
+
+
+def get_download_shared_asset_service(db: Session = Depends(get_db)) -> DownloadSharedAssetService:
+    return DownloadSharedAssetService(
+        asset_repo=SqlAlchemyAssetRepository(db),
+        storage=R2DownloadAdapter(),
     )
