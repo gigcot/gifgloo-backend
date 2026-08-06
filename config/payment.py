@@ -53,8 +53,8 @@ def _get_toss_pay_gateway() -> TossPayHttpAdapter:
             "TOSS_PAY_RESULT_CALLBACK_URL",
             "https://api.gifgloo.com/payments/toss/callback",
         ),
-        return_url=os.getenv("TOSS_PAY_RETURN_URL", "https://gifgloo.com"),
-        cancel_url=os.getenv("TOSS_PAY_CANCEL_URL", "https://gifgloo.com"),
+        return_url=os.getenv("TOSS_PAY_RETURN_URL", "https://gifgloo.com/payment/success"),
+        cancel_url=os.getenv("TOSS_PAY_CANCEL_URL", "https://gifgloo.com/payment/cancel"),
         base_url=os.getenv("TOSS_PAY_BASE_URL", "https://pay.toss.im/api/v2"),
     )
 

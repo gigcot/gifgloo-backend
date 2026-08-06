@@ -4,7 +4,7 @@ from composition.application.ports.inbound.request_composition import (
     RequestCompositionResult,
 )
 from composition.domain.value_objects.composition_policy import MAX_FRAMES, ALLOWED_IMAGE_SIGNATURES
-from shared.exceptions import ConfirmationRequiredException, BusinessRuleException, AuthorizationException, ValidationException
+from shared.exceptions import ConfirmationRequiredException, BusinessRuleException, AuthorizationException, ValidationException, InsufficientCreditException
 
 
 def _validate_image_format(data: bytes) -> None:
@@ -51,7 +51,7 @@ class RequestCompositionService(RequestCompositionPort):
             raise AuthorizationException("유효하지 않은 유저입니다")
 
         if not await self._credit.has_enough_credit(command.user_id):
-            raise BusinessRuleException("크레딧이 부족합니다")
+            raise InsufficientCreditException("크레딧이 부족합니다")
 
         _validate_image_format(command.target_bytes)
 

@@ -27,6 +27,11 @@ class BusinessRuleException(DomainException):
     pass
 
 
+class InsufficientCreditException(DomainException):
+    """크레딧 부족 → 402"""
+    pass
+
+
 class ValidationException(DomainException):
     """입력값 검증 실패 → 422"""
     pass
