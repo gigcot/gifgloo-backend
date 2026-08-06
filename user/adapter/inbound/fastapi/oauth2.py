@@ -2,7 +2,7 @@ import os
 import jwt
 from dotenv import load_dotenv
 from fastapi import APIRouter, Depends
-from fastapi.responses import RedirectResponse
+from fastapi.responses import RedirectResponse, Response
 from sqlalchemy.orm import Session
 
 from config.user import get_kakao_social_login_service, get_google_social_login_service
@@ -35,6 +35,18 @@ def _redirect_with_cookie(user_id: str, is_new_user: bool = False) -> RedirectRe
     response.set_cookie(
         key="user_token",
         value=token,
+        httponly=True,
+        samesite="lax",
+        secure=os.getenv("COOKIE_SECURE").lower() == "true",
+    )
+    return response
+
+
+@router.post("/logout", status_code=204)
+def logout() -> Response:
+    response = Response(status_code=204)
+    response.delete_cookie(
+        key="user_token",
         httponly=True,
         samesite="lax",
         secure=os.getenv("COOKIE_SECURE").lower() == "true",
