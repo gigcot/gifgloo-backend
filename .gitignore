@@ -48,7 +48,8 @@ load_test/results/
 cc_prompt/
 .claude/
 tests/
-
+AGENTS.md
+portfolio-export/
 ##
 .DS_store
 .pem
