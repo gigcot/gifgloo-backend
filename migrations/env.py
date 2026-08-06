@@ -4,6 +4,7 @@ from logging.config import fileConfig
 from alembic import context
 from sqlalchemy import engine_from_config, pool
 
+import admin.adapter.outbound.persistence.models  # noqa: F401
 import asset.adapter.outbound.models  # noqa: F401
 import composition.adapter.outbound.persistence.models  # noqa: F401
 import credit_account.adapter.outbound.models  # noqa: F401

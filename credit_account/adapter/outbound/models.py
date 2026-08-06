@@ -25,6 +25,7 @@ class CreditTransactionModel(Base):
     transaction_type = Column(String, nullable=False)
     source_type = Column(String, nullable=True)
     source_id = Column(String, nullable=True)
+    reason = Column(String, nullable=True)
     created_at = Column(DateTime(timezone=True), nullable=False)
 
     account = relationship("CreditAccountModel", back_populates="transactions")

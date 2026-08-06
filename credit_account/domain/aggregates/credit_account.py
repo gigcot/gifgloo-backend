@@ -13,6 +13,7 @@ class CreditTransaction:
     transaction_type: TransactionType
     source_type: CreditSourceType | None = None
     source_id: str | None = None
+    reason: str | None = None
     id: str = field(default_factory=lambda: str(uuid.uuid4()))
     created_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
 
@@ -66,6 +67,7 @@ class CreditAccount:
         amount: int,
         source_type: CreditSourceType | None = None,
         source_id: str | None = None,
+        reason: str | None = None,
     ) -> None:
         if amount <= 0:
             raise BusinessRuleException("충전 크레딧은 0보다 커야 합니다")
@@ -77,6 +79,7 @@ class CreditAccount:
             transaction_type=TransactionType.CHARGE,
             source_type=source_type,
             source_id=source_id,
+            reason=reason,
         )
         self.transactions.append(transaction)
         self._pending_transactions.append(transaction)

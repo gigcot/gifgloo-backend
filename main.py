@@ -20,6 +20,7 @@ import composition.adapter.outbound.persistence.models  # noqa: F401
 import asset.adapter.outbound.models  # noqa: F401
 import credit_account.adapter.outbound.models  # noqa: F401
 import payment.adapter.outbound.persistence.models  # noqa: F401
+import admin.adapter.outbound.persistence.models  # noqa: F401
 
 from composition.adapter.inbound.fastapi.composition_router import router as composition_router
 from composition.adapter.inbound.fastapi.composition_internal_router import router as composition_internal_router

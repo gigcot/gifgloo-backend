@@ -68,5 +68,6 @@ class SqlAlchemyAsyncCreditAccountRepository(AsyncCreditAccountRepository):
             transaction_type=transaction.transaction_type.value,
             source_type=transaction.source_type.value if transaction.source_type else None,
             source_id=transaction.source_id,
+            reason=transaction.reason,
             created_at=transaction.created_at,
         )
