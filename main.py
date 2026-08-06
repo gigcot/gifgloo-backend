@@ -32,6 +32,7 @@ from user.adapter.inbound.fastapi.user_router import router as user_router
 from asset.adapter.inbound.fastapi.asset_router import router as asset_router
 from credit_account.adapter.inbound.fastapi.credit_account_router import router as credit_router
 from payment.adapter.inbound.fastapi.payment_router import router as payment_router
+from admin.adapter.inbound.fastapi.admin_router import router as admin_router
 
 
 async def _recover_processing_jobs() -> None:
@@ -96,3 +97,4 @@ app.include_router(user_router)
 app.include_router(asset_router)
 app.include_router(credit_router)
 app.include_router(payment_router)
+app.include_router(admin_router)
