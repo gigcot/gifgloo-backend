@@ -12,6 +12,8 @@ from credit_account.adapter.outbound.models import (
     CreditTransactionModel,
 )
 from credit_account.domain.value_objects.credit_source_type import CreditSourceType
+from credit_account.domain.value_objects.transaction_type import TransactionType
+from composition.domain.value_objects.composition_status import CompositionStatus
 from payment.adapter.outbound.persistence.models import PaymentModel
 from payment.domain.value_objects.payment_status import PaymentStatus
 from user.adapter.outbound.persistence.models import UserModel
@@ -41,15 +43,16 @@ class SqlAlchemyAdminOpsQuery:
             )
         )
 
-        today_compositions = await self._session.scalar(
+        today_completed_compositions = await self._session.scalar(
             select(func.count()).select_from(CompositionJobModel).where(
                 CompositionJobModel.created_at >= day_start,
+                CompositionJobModel.status == CompositionStatus.COMPLETED.value,
             )
         )
         today_failed = await self._session.scalar(
             select(func.count()).select_from(CompositionJobModel).where(
                 CompositionJobModel.created_at >= day_start,
-                CompositionJobModel.status == "FAILED",
+                CompositionJobModel.status == CompositionStatus.FAILED.value,
             )
         )
         today_payment_amount = await self._session.scalar(
@@ -58,10 +61,22 @@ class SqlAlchemyAdminOpsQuery:
                 PaymentModel.status == PaymentStatus.APPROVED.value,
             )
         )
+        today_ready_payments = await self._session.scalar(
+            select(func.count()).select_from(PaymentModel).where(
+                PaymentModel.created_at >= day_start,
+                PaymentModel.status == PaymentStatus.READY.value,
+            )
+        )
+        today_ready_payment_amount = await self._session.scalar(
+            select(func.coalesce(func.sum(PaymentModel.amount), 0)).where(
+                PaymentModel.created_at >= day_start,
+                PaymentModel.status == PaymentStatus.READY.value,
+            )
+        )
         today_credit_grants = await self._session.scalar(
             select(func.coalesce(func.sum(CreditTransactionModel.amount), 0)).where(
                 CreditTransactionModel.created_at >= day_start,
-                CreditTransactionModel.transaction_type == "CHARGE",
+                CreditTransactionModel.transaction_type == TransactionType.CHARGE.value,
             )
         )
         missing_credit_candidates = await self._session.scalar(
@@ -74,9 +89,11 @@ class SqlAlchemyAdminOpsQuery:
 
         return {
             "admin_user_id": admin_user_id,
-            "today_compositions": today_compositions or 0,
+            "today_compositions": today_completed_compositions or 0,
             "today_failed_compositions": today_failed or 0,
             "today_payment_amount": today_payment_amount or 0,
+            "today_ready_payments": today_ready_payments or 0,
+            "today_ready_payment_amount": today_ready_payment_amount or 0,
             "today_credit_grants": today_credit_grants or 0,
             "missing_credit_candidates": missing_credit_candidates or 0,
         }

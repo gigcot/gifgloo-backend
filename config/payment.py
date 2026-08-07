@@ -37,24 +37,19 @@ from payment.application.services.process_verified_payment_service import (
 from payment.application.services.handle_toss_pay_callback_service import (
     HandleTossPayCallbackService,
 )
+from config.payment_settings import required_payment_env
 from user.adapter.outbound.persistence.sqlalchemy_async_user_repository import (
     SqlAlchemyAsyncUserRepository,
 )
 from user.application.services.async_verify_user_service import AsyncVerifyUserService
 
 
-TOSS_PAY_PUBLIC_TEST_KEY = "sk_test_w5lNQylNqa5lNQe013Nq"
-
-
 def _get_toss_pay_gateway() -> TossPayHttpAdapter:
     return TossPayHttpAdapter(
-        api_key=os.getenv("TOSS_PAY_API_KEY", TOSS_PAY_PUBLIC_TEST_KEY),
-        result_callback_url=os.getenv(
-            "TOSS_PAY_RESULT_CALLBACK_URL",
-            "https://api.gifgloo.com/payments/toss/callback",
-        ),
-        return_url=os.getenv("TOSS_PAY_RETURN_URL", "https://gifgloo.com/payment/success"),
-        cancel_url=os.getenv("TOSS_PAY_CANCEL_URL", "https://gifgloo.com/payment/cancel"),
+        api_key=required_payment_env("TOSS_PAY_API_KEY"),
+        result_callback_url=required_payment_env("TOSS_PAY_RESULT_CALLBACK_URL"),
+        return_url=required_payment_env("TOSS_PAY_RETURN_URL"),
+        cancel_url=required_payment_env("TOSS_PAY_CANCEL_URL"),
         base_url=os.getenv("TOSS_PAY_BASE_URL", "https://pay.toss.im/api/v2"),
     )
 

@@ -8,6 +8,7 @@ from dotenv import load_dotenv
 load_dotenv(".env")
 
 from config.database import get_db
+from config.payment_settings import validate_payment_config
 from shared.fastapi_error_handler import register_error_handlers
 from shared.metrics import (
     metrics_response,
@@ -60,6 +61,7 @@ async def _recover_processing_jobs() -> None:
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    validate_payment_config()
     runtime_metrics_task = asyncio.create_task(monitor_runtime_metrics())
     try:
         await _recover_processing_jobs()
