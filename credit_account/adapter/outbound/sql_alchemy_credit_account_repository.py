@@ -40,6 +40,7 @@ class SqlAlchemyCreditAccountRepository(CreditAccountRepositoryPort):
                     transaction_type=TransactionType(t.transaction_type),
                     source_type=CreditSourceType(t.source_type) if t.source_type else None,
                     source_id=t.source_id,
+                    balance_after=t.balance_after,
                     created_at=t.created_at,
                 )
                 for t in model.transactions
@@ -54,5 +55,6 @@ class SqlAlchemyCreditAccountRepository(CreditAccountRepositoryPort):
             transaction_type=tx.transaction_type.value,
             source_type=tx.source_type.value if tx.source_type else None,
             source_id=tx.source_id,
+            balance_after=tx.balance_after,
             created_at=tx.created_at,
         )

@@ -91,7 +91,7 @@ class RequestCompositionService(RequestCompositionPort):
             COMPOSITION_CREATED_TOTAL.inc()
 
             try:
-                await self._credit.deduct(command.user_id)
+                await self._credit.deduct(command.user_id, job.id)
                 CREDIT_DEDUCT_TOTAL.inc()
             except Exception as e:
                 job.fail(str(e))
@@ -117,7 +117,7 @@ class RequestCompositionService(RequestCompositionPort):
                 )
             )
         except Exception as e:
-            await self._credit.refund(command.user_id)
+            await self._credit.refund(command.user_id, job.id)
             CREDIT_REFUND_TOTAL.inc()
             job.fail(str(e))
             await self._composition_repo.update(job)

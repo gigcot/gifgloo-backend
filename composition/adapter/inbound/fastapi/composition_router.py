@@ -109,6 +109,16 @@ async def get_composition_status(
         "result_url": result.result_url,
         "result_asset_id": result.result_asset_id,
         "failed_reason": result.failed_reason,
+        "credit_settlement": (
+            {
+                "balance_before": result.credit_settlement.balance_before,
+                "charged": result.credit_settlement.charged,
+                "refunded": result.credit_settlement.refunded,
+                "balance_after": result.credit_settlement.balance_after,
+            }
+            if result.credit_settlement
+            else None
+        ),
     }
 
 
@@ -138,7 +148,17 @@ async def stream_composition_status(
                             user_id=user_id,
                         ),
                     )
-                    yield f"data: {json.dumps({'status': result.status.value, 'stage': result.stage.value if result.stage else None, 'result_url': result.result_url, 'result_asset_id': result.result_asset_id, 'failed_reason': result.failed_reason})}\n\n"
+                    credit_settlement = (
+                        {
+                            "balance_before": result.credit_settlement.balance_before,
+                            "charged": result.credit_settlement.charged,
+                            "refunded": result.credit_settlement.refunded,
+                            "balance_after": result.credit_settlement.balance_after,
+                        }
+                        if result.credit_settlement
+                        else None
+                    )
+                    yield f"data: {json.dumps({'status': result.status.value, 'stage': result.stage.value if result.stage else None, 'result_url': result.result_url, 'result_asset_id': result.result_asset_id, 'failed_reason': result.failed_reason, 'credit_settlement': credit_settlement})}\n\n"
 
                     if result.status == CompositionStatus.COMPLETED:
                         terminal_sent = True

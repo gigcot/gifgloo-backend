@@ -7,9 +7,9 @@ class CreditPort(ABC):
         pass
 
     @abstractmethod
-    async def deduct(self, user_id: str) -> None:
+    async def deduct(self, user_id: str, job_id: str) -> None:
         pass
 
     @abstractmethod
-    async def refund(self, user_id: str) -> None:
+    async def refund(self, user_id: str, job_id: str) -> None:
         pass

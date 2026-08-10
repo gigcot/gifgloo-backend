@@ -12,6 +12,14 @@ class GetCompositionStatusQuery:
     user_id: str
 
 
+@dataclass(frozen=True)
+class CreditSettlementResult:
+    balance_before: int
+    charged: int
+    refunded: int
+    balance_after: int
+
+
 @dataclass
 class GetCompositionStatusResult:
     composition_job_id: str
@@ -20,6 +28,7 @@ class GetCompositionStatusResult:
     result_url: Optional[str]
     result_asset_id: Optional[str]
     failed_reason: Optional[str]
+    credit_settlement: Optional[CreditSettlementResult]
 
 
 class GetCompositionStatusPort(ABC):

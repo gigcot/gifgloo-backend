@@ -99,8 +99,8 @@ class PipelineCallbackService:
         if job.status in (CompositionStatus.COMPLETED, CompositionStatus.FAILED):
             return
         job.fail(reason)
+        await self._credit.refund(job.user_id, job.id)
         await self._composition_repo.update(job)
-        await self._credit.refund(job.user_id)
         await self._transaction.commit()
         PIPELINE_FAIL_TOTAL.inc()
         COMPOSITION_FAILED_TOTAL.inc()

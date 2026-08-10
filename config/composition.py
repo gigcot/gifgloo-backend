@@ -8,6 +8,9 @@ from composition.adapter.outbound.aws.lambda_pipeline_trigger_adapter import Lam
 from composition.adapter.outbound.aws.r2_storage_adapter import R2StorageAdapter
 from composition.adapter.outbound.domain_bridges.async_asset_create_adapter import AsyncAssetCreateAdapter
 from composition.adapter.outbound.domain_bridges.async_credit_adapter import AsyncCreditAdapter
+from composition.adapter.outbound.domain_bridges.async_credit_summary_adapter import (
+    AsyncCreditSummaryAdapter,
+)
 from composition.adapter.outbound.domain_bridges.async_user_verification_adapter import (
     AsyncUserVerificationAdapter,
 )
@@ -29,7 +32,13 @@ from credit_account.adapter.outbound.async_user_verification import (
 from credit_account.adapter.outbound.sqlalchemy_async_credit_account_repository import (
     SqlAlchemyAsyncCreditAccountRepository,
 )
+from credit_account.adapter.outbound.sqlalchemy_async_credit_summary_reader import (
+    SqlAlchemyAsyncCreditSummaryReader,
+)
 from credit_account.application.services.async_credit_service import AsyncCreditService
+from credit_account.application.services.get_composition_credit_summary_service import (
+    GetCompositionCreditSummaryService,
+)
 from user.adapter.outbound.persistence.sqlalchemy_async_user_repository import SqlAlchemyAsyncUserRepository
 from user.application.services.async_verify_user_service import AsyncVerifyUserService
 
@@ -79,6 +88,11 @@ def get_composition_list_service(
 def get_composition_status_service() -> GetCompositionStatusService:
     return GetCompositionStatusService(
         status_reader=SqlAlchemyAsyncCompositionStatusReader(AsyncSessionLocal),
+        credit=AsyncCreditSummaryAdapter(
+            GetCompositionCreditSummaryService(
+                SqlAlchemyAsyncCreditSummaryReader(AsyncSessionLocal)
+            )
+        ),
     )
 
 
