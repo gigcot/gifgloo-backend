@@ -1,4 +1,4 @@
-from sqlalchemy import Column, String, DateTime
+from sqlalchemy import Boolean, Column, DateTime, String
 
 from config.database import Base
 
@@ -13,3 +13,7 @@ class UserModel(Base):
     role = Column(String, nullable=False)
     status = Column(String, nullable=False)
     created_at = Column(DateTime(timezone=True), nullable=False)
+    terms_version = Column(String, nullable=True)
+    privacy_version = Column(String, nullable=True)
+    is_fourteen_or_older = Column(Boolean, nullable=False, default=False)
+    consented_at = Column(DateTime(timezone=True), nullable=True)

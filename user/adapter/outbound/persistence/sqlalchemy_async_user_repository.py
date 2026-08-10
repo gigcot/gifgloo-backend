@@ -5,6 +5,7 @@ from user.application.ports.outbound.async_user_repository import AsyncUserRepos
 from user.domain.aggregates.user import User, UserRole, UserStatus
 from user.domain.value_objects.email import Email
 from user.domain.value_objects.social_account import SocialAccount, SocialProvider
+from user.domain.value_objects.signup_consent import SignupConsent
 
 
 class SqlAlchemyAsyncUserRepository(AsyncUserRepository):
@@ -25,4 +26,14 @@ class SqlAlchemyAsyncUserRepository(AsyncUserRepository):
         user.role = UserRole(model.role)
         user.status = UserStatus(model.status)
         user.created_at = model.created_at
+        user.signup_consent = (
+            SignupConsent(
+                terms_version=model.terms_version,
+                privacy_version=model.privacy_version,
+                is_fourteen_or_older=model.is_fourteen_or_older,
+                agreed_at=model.consented_at,
+            )
+            if model.consented_at
+            else None
+        )
         return user

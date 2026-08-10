@@ -7,6 +7,7 @@ import uuid
 
 from user.domain.value_objects.email import Email
 from user.domain.value_objects.social_account import SocialAccount
+from user.domain.value_objects.signup_consent import SignupConsent
 from shared.exceptions import InvalidStateException
 
 
@@ -26,11 +27,13 @@ class User:
         social_account: SocialAccount,
         email: Optional[Email] = None,
         role: UserRole = UserRole.USER,
+        signup_consent: Optional[SignupConsent] = None,
     ):
         self.id: str = str(uuid.uuid4())
         self.social_account: SocialAccount = social_account
         self.email: Optional[Email] = email
         self.role: UserRole = role
+        self.signup_consent: Optional[SignupConsent] = signup_consent
         self.status: UserStatus = UserStatus.ACTIVE
         self.created_at: datetime = datetime.now(timezone.utc)
 
@@ -46,6 +49,25 @@ class User:
 
     def update_email(self, email: Email) -> None:
         self.email = email
+
+    def record_signup_consent(
+        self,
+        terms_version: str,
+        privacy_version: str,
+        is_fourteen_or_older: bool,
+    ) -> None:
+        if (
+            self.signup_consent
+            and self.signup_consent.terms_version == terms_version
+            and self.signup_consent.privacy_version == privacy_version
+            and self.signup_consent.is_fourteen_or_older == is_fourteen_or_older
+        ):
+            return
+        self.signup_consent = SignupConsent.record(
+            terms_version=terms_version,
+            privacy_version=privacy_version,
+            is_fourteen_or_older=is_fourteen_or_older,
+        )
 
     def is_active(self) -> bool:
         return self.status == UserStatus.ACTIVE
