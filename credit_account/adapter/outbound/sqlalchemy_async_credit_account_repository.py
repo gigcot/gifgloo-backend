@@ -57,7 +57,7 @@ class SqlAlchemyAsyncCreditAccountRepository(AsyncCreditAccountRepository):
         statement = select(CreditTransactionModel.id).where(
             CreditTransactionModel.source_type == source_type.value,
             CreditTransactionModel.source_id == source_id,
-        )
+        ).limit(1)
         return (await self._session.execute(statement)).scalar_one_or_none() is not None
 
     def _tx_to_model(self, transaction: CreditTransaction, user_id: str) -> CreditTransactionModel:
@@ -69,5 +69,6 @@ class SqlAlchemyAsyncCreditAccountRepository(AsyncCreditAccountRepository):
             source_type=transaction.source_type.value if transaction.source_type else None,
             source_id=transaction.source_id,
             reason=transaction.reason,
+            balance_after=transaction.balance_after,
             created_at=transaction.created_at,
         )

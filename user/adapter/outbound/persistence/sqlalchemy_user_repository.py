@@ -8,6 +8,7 @@ from user.application.ports.outbound.user_repository import UserRepositoryPort
 from user.domain.aggregates.user import User, UserRole, UserStatus
 from user.domain.value_objects.email import Email
 from user.domain.value_objects.social_account import SocialAccount, SocialProvider
+from user.domain.value_objects.signup_consent import SignupConsent
 
 
 class SqlAlchemyUserRepository(UserRepositoryPort):
@@ -20,6 +21,18 @@ class SqlAlchemyUserRepository(UserRepositoryPort):
             existing.email = user.email.value if user.email else None
             existing.role = user.role.value
             existing.status = user.status.value
+            existing.terms_version = (
+                user.signup_consent.terms_version if user.signup_consent else None
+            )
+            existing.privacy_version = (
+                user.signup_consent.privacy_version if user.signup_consent else None
+            )
+            existing.is_fourteen_or_older = bool(
+                user.signup_consent and user.signup_consent.is_fourteen_or_older
+            )
+            existing.consented_at = (
+                user.signup_consent.agreed_at if user.signup_consent else None
+            )
         else:
             self._session.add(UserModel(
                 id=user.id,
@@ -29,6 +42,18 @@ class SqlAlchemyUserRepository(UserRepositoryPort):
                 role=user.role.value,
                 status=user.status.value,
                 created_at=user.created_at,
+                terms_version=(
+                    user.signup_consent.terms_version if user.signup_consent else None
+                ),
+                privacy_version=(
+                    user.signup_consent.privacy_version if user.signup_consent else None
+                ),
+                is_fourteen_or_older=bool(
+                    user.signup_consent and user.signup_consent.is_fourteen_or_older
+                ),
+                consented_at=(
+                    user.signup_consent.agreed_at if user.signup_consent else None
+                ),
             ))
         self._session.commit()
 
@@ -60,4 +85,14 @@ class SqlAlchemyUserRepository(UserRepositoryPort):
         user.role = UserRole(model.role)
         user.status = UserStatus(model.status)
         user.created_at = model.created_at
+        user.signup_consent = (
+            SignupConsent(
+                terms_version=model.terms_version,
+                privacy_version=model.privacy_version,
+                is_fourteen_or_older=model.is_fourteen_or_older,
+                agreed_at=model.consented_at,
+            )
+            if model.consented_at
+            else None
+        )
         return user

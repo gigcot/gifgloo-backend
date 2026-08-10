@@ -15,15 +15,19 @@ class _Credit:
     def __init__(self):
         self.deducted = False
         self.refunded = False
+        self.deducted_job_id = None
+        self.refunded_job_id = None
 
     async def has_enough_credit(self, user_id: str) -> bool:
         return True
 
-    async def deduct(self, user_id: str) -> None:
+    async def deduct(self, user_id: str, job_id: str) -> None:
         self.deducted = True
+        self.deducted_job_id = job_id
 
-    async def refund(self, user_id: str) -> None:
+    async def refund(self, user_id: str, job_id: str) -> None:
         self.refunded = True
+        self.refunded_job_id = job_id
 
 
 class _Feasibility:
@@ -116,6 +120,7 @@ class RequestCompositionServiceTest(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(credit.deducted)
         self.assertFalse(credit.refunded)
         self.assertEqual(writer.jobs[-1][1], CompositionStatus.PROCESSING)
+        self.assertEqual(credit.deducted_job_id, result.composition_job_id)
         self.assertEqual(transaction.commits, 1)
         self.assertEqual(transaction.rollbacks, 1)
 
@@ -134,4 +139,5 @@ class RequestCompositionServiceTest(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(credit.deducted)
         self.assertTrue(credit.refunded)
         self.assertEqual(writer.jobs[-1][1], CompositionStatus.FAILED)
+        self.assertEqual(credit.refunded_job_id, writer.jobs[-1][0])
         self.assertEqual(transaction.commits, 2)

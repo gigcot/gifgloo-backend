@@ -9,6 +9,7 @@ from user.adapter.outbound.persistence.sqlalchemy_user_repository import SqlAlch
 from user.adapter.outbound.social.kakao_social_provider_adapter import KakaoSocialProviderAdapter
 from user.adapter.outbound.social.google_social_provider_adapter import GoogleSocialProviderAdapter
 from user.application.services.social_login_service import SocialLoginService
+from user.application.services.record_signup_consent_service import RecordSignupConsentService
 
 
 def _make_social_login_service(provider, db: Session) -> SocialLoginService:
@@ -27,3 +28,9 @@ def get_kakao_social_login_service(db: Session = Depends(get_db)) -> SocialLogin
 
 def get_google_social_login_service(db: Session = Depends(get_db)) -> SocialLoginService:
     return _make_social_login_service(GoogleSocialProviderAdapter(), db)
+
+
+def get_record_signup_consent_service(
+    db: Session = Depends(get_db),
+) -> RecordSignupConsentService:
+    return RecordSignupConsentService(SqlAlchemyUserRepository(db))

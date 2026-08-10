@@ -1,19 +1,21 @@
 import os
 
 import jwt
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel
 
+from config.user import get_record_signup_consent_service
 from user.application.ports.inbound.change_role import ChangeRoleCommand
 from user.application.ports.inbound.deactivate_user import DeactivateUserCommand
 from user.application.ports.inbound.get_user import GetUserQuery
+from user.application.ports.inbound.record_signup_consent import RecordSignupConsentCommand
 from user.application.ports.inbound.update_email import UpdateEmailCommand
 from user.application.services.change_role_service import ChangeRoleService
 from user.application.services.deactivate_user_service import DeactivateUserService
 from user.application.services.get_user_service import GetUserService
+from user.application.services.record_signup_consent_service import RecordSignupConsentService
 from user.application.services.update_email_service import UpdateEmailService
 from user.domain.aggregates.user import UserRole
-from fastapi import Request                                                                                                                
 
 
 
@@ -29,17 +31,56 @@ class UpdateEmailBody(BaseModel):
 class ChangeRoleBody(BaseModel):
     new_role: UserRole
 
-@router.get("/me")
-async def is_signed_in(request: Request):
-    
+
+class RecordSignupConsentBody(BaseModel):
+    terms_version: str
+    privacy_version: str
+    is_fourteen_or_older: bool
+
+
+def _get_user_id(request: Request) -> str:
     token = request.cookies.get("user_token")
     if token is None:
-        raise HTTPException(401, "유효하지않은 사용자입니다")
+        raise HTTPException(401, "유효하지 않은 사용자입니다")
+    try:
+        payload = jwt.decode(token, SECRET_KEY, algorithms=["HS256"])
+        return payload["user_id"]
+    except (jwt.InvalidTokenError, KeyError):
+        raise HTTPException(401, "유효하지 않은 사용자입니다")
+
+
+@router.get("/me")
+async def is_signed_in(request: Request):
+    token = request.cookies.get("user_token")
+    if token is None:
+        raise HTTPException(401, "유효하지 않은 사용자입니다")
     try:
         jwt.decode(token, SECRET_KEY, algorithms=["HS256"])
-        return {"ok": True}
-    except:
-        raise HTTPException(401, "유효하지않은 사용자입니다")
+    except jwt.InvalidTokenError:
+        raise HTTPException(401, "유효하지 않은 사용자입니다")
+    return {"ok": True}
+
+
+@router.post("/me/consents")
+def record_signup_consent(
+    body: RecordSignupConsentBody,
+    request: Request,
+    service: RecordSignupConsentService = Depends(get_record_signup_consent_service),
+):
+    result = service.execute(
+        RecordSignupConsentCommand(
+            user_id=_get_user_id(request),
+            terms_version=body.terms_version,
+            privacy_version=body.privacy_version,
+            is_fourteen_or_older=body.is_fourteen_or_older,
+        )
+    )
+    return {
+        "terms_version": result.terms_version,
+        "privacy_version": result.privacy_version,
+        "is_fourteen_or_older": result.is_fourteen_or_older,
+        "agreed_at": result.agreed_at,
+    }
 
 
 # @router.post("/me/deactivate")

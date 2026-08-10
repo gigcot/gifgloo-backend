@@ -14,6 +14,7 @@ class CreditTransaction:
     source_type: CreditSourceType | None = None
     source_id: str | None = None
     reason: str | None = None
+    balance_after: int | None = None
     id: str = field(default_factory=lambda: str(uuid.uuid4()))
     created_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
 
@@ -42,22 +43,40 @@ class CreditAccount:
     def has_enough(self) -> bool:
         return self.balance >= self.composition_cost
 
-    def deduct(self) -> None:
+    def deduct(
+        self,
+        source_type: CreditSourceType | None = None,
+        source_id: str | None = None,
+    ) -> None:
         if not self.has_enough():
             raise BusinessRuleException("잔액이 충분하지 않습니다")
+        if (source_type is None) != (source_id is None):
+            raise BusinessRuleException("크레딧 출처 종류와 식별자는 함께 지정해야 합니다")
         self.balance -= self.composition_cost
         transaction = CreditTransaction(
             amount=self.composition_cost,
             transaction_type=TransactionType.DEDUCT,
+            source_type=source_type,
+            source_id=source_id,
+            balance_after=self.balance,
         )
         self.transactions.append(transaction)
         self._pending_transactions.append(transaction)
 
-    def refund(self) -> None:
+    def refund(
+        self,
+        source_type: CreditSourceType | None = None,
+        source_id: str | None = None,
+    ) -> None:
+        if (source_type is None) != (source_id is None):
+            raise BusinessRuleException("크레딧 출처 종류와 식별자는 함께 지정해야 합니다")
         self.balance += self.composition_cost
         transaction = CreditTransaction(
             amount=self.composition_cost,
             transaction_type=TransactionType.REFUND,
+            source_type=source_type,
+            source_id=source_id,
+            balance_after=self.balance,
         )
         self.transactions.append(transaction)
         self._pending_transactions.append(transaction)
@@ -80,6 +99,7 @@ class CreditAccount:
             source_type=source_type,
             source_id=source_id,
             reason=reason,
+            balance_after=self.balance,
         )
         self.transactions.append(transaction)
         self._pending_transactions.append(transaction)

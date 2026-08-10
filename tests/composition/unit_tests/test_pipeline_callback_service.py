@@ -37,8 +37,8 @@ class _Credit:
     def __init__(self):
         self.refunded_user_ids = []
 
-    async def refund(self, user_id: str) -> None:
-        self.refunded_user_ids.append(user_id)
+    async def refund(self, user_id: str, job_id: str) -> None:
+        self.refunded_user_ids.append((user_id, job_id))
 
 
 class _UserVerification:
@@ -106,7 +106,10 @@ class PipelineCallbackServiceTest(unittest.IsolatedAsyncioTestCase):
         await service.fail(repository.job.id, "pipeline failed")
 
         self.assertEqual(repository.job.status, CompositionStatus.FAILED)
-        self.assertEqual(credit.refunded_user_ids, ["user-1"])
+        self.assertEqual(
+            credit.refunded_user_ids,
+            [("user-1", repository.job.id)],
+        )
         self.assertEqual(repository.saves, 1)
         self.assertEqual(transaction.commits, 1)
 
@@ -116,7 +119,10 @@ class PipelineCallbackServiceTest(unittest.IsolatedAsyncioTestCase):
         await service.fail(repository.job.id, "pipeline failed")
         await service.fail(repository.job.id, "pipeline failed")
 
-        self.assertEqual(credit.refunded_user_ids, ["user-1"])
+        self.assertEqual(
+            credit.refunded_user_ids,
+            [("user-1", repository.job.id)],
+        )
         self.assertEqual(repository.saves, 1)
         self.assertEqual(transaction.commits, 1)
 

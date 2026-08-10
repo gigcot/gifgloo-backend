@@ -3,6 +3,7 @@ import sys
 import types
 import unittest
 from importlib.util import find_spec
+from types import SimpleNamespace
 
 import jwt
 from fastapi import FastAPI
@@ -25,7 +26,12 @@ from composition.adapter.inbound.fastapi.composition_internal_router import (  #
     router as composition_internal_router,
 )
 from composition.adapter.inbound.fastapi.composition_router import router as composition_router  # noqa: E402
-from config.composition import get_pipeline_callback_service, get_request_composition_service  # noqa: E402
+from config.composition import (  # noqa: E402
+    get_composition_status_service,
+    get_pipeline_callback_service,
+    get_request_composition_service,
+)
+from composition.domain.value_objects.composition_status import CompositionStatus  # noqa: E402
 from shared.metrics import normalized_path  # noqa: E402
 
 
@@ -60,15 +66,35 @@ class _PipelineCallbackService:
         pass
 
 
+class _CompositionStatusService:
+    async def execute(self, query):
+        return SimpleNamespace(
+            composition_job_id=query.composition_job_id,
+            status=CompositionStatus.COMPLETED,
+            stage=None,
+            result_url="https://assets.example/result.gif",
+            result_asset_id="asset-1",
+            failed_reason=None,
+            credit_settlement=SimpleNamespace(
+                balance_before=50,
+                charged=10,
+                refunded=0,
+                balance_after=40,
+            ),
+        )
+
+
 class CompositionRoutesTest(unittest.TestCase):
     def setUp(self):
         self.request_service = _RequestCompositionService()
         self.callback_service = _PipelineCallbackService()
+        self.status_service = _CompositionStatusService()
         app = FastAPI()
         app.include_router(composition_router)
         app.include_router(composition_internal_router)
         app.dependency_overrides[get_request_composition_service] = lambda: self.request_service
         app.dependency_overrides[get_pipeline_callback_service] = lambda: self.callback_service
+        app.dependency_overrides[get_composition_status_service] = lambda: self.status_service
         self.client = TestClient(app)
 
     def _set_auth_cookie(self) -> None:
@@ -108,6 +134,22 @@ class CompositionRoutesTest(unittest.TestCase):
                 "job_id": "job-1",
                 "draft_key": "draft.png",
                 "result_key": "result.gif",
+            },
+        )
+
+    def test_status_returns_credit_summary(self):
+        self._set_auth_cookie()
+
+        response = self.client.get("/compositions/job-1")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(
+            response.json()["credit_settlement"],
+            {
+                "balance_before": 50,
+                "charged": 10,
+                "refunded": 0,
+                "balance_after": 40,
             },
         )
 
