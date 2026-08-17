@@ -28,8 +28,14 @@ from payment.adapter.outbound.persistence.sqlalchemy_payment_inbox import (
 from payment.adapter.outbound.payment_gateway.toss_pay_http_adapter import (
     TossPayHttpAdapter,
 )
+from payment.adapter.outbound.payment_gateway.portone_http_adapter import (
+    PortOneHttpAdapter,
+)
 from payment.application.services.create_payment_order_service import (
     CreatePaymentOrderService,
+)
+from payment.application.services.confirm_portone_payment_service import (
+    ConfirmPortOnePaymentService,
 )
 from payment.application.services.process_verified_payment_service import (
     ProcessVerifiedPaymentService,
@@ -37,7 +43,7 @@ from payment.application.services.process_verified_payment_service import (
 from payment.application.services.handle_toss_pay_callback_service import (
     HandleTossPayCallbackService,
 )
-from config.payment_settings import required_payment_env
+from config.payment_settings import required_payment_env, required_portone_environment
 from user.adapter.outbound.persistence.sqlalchemy_async_user_repository import (
     SqlAlchemyAsyncUserRepository,
 )
@@ -54,6 +60,13 @@ def _get_toss_pay_gateway() -> TossPayHttpAdapter:
     )
 
 
+def _get_portone_gateway() -> PortOneHttpAdapter:
+    return PortOneHttpAdapter(
+        api_secret=required_payment_env("PORTONE_API_SECRET"),
+        base_url=os.getenv("PORTONE_API_BASE_URL", "https://api.portone.io"),
+    )
+
+
 def get_create_payment_order_service(
     db: AsyncSession = Depends(get_async_db),
 ) -> CreatePaymentOrderService:
@@ -63,7 +76,28 @@ def get_create_payment_order_service(
         ),
         payment_repo=SqlAlchemyAsyncPaymentRepository(db),
         transaction=SqlAlchemyAsyncTransaction(db),
-        toss_pay_gateway=_get_toss_pay_gateway(),
+    )
+
+
+def get_confirm_portone_payment_service(
+    db: AsyncSession = Depends(get_async_db),
+) -> ConfirmPortOnePaymentService:
+    payment_repo = SqlAlchemyAsyncPaymentRepository(db)
+    transaction = SqlAlchemyAsyncTransaction(db)
+    return ConfirmPortOnePaymentService(
+        portone_gateway=_get_portone_gateway(),
+        process_payment=ProcessVerifiedPaymentService(
+            payment_repo=payment_repo,
+            inbox=SqlAlchemyPaymentInbox(db),
+            credit=AsyncCreditGrantAdapter(
+                GrantPaymentCreditService(
+                    SqlAlchemyAsyncCreditAccountRepository(db)
+                )
+            ),
+            transaction=transaction,
+        ),
+        payment_repo=payment_repo,
+        expected_environment=required_portone_environment(),
     )
 
 

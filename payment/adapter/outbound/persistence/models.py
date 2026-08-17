@@ -1,6 +1,7 @@
 from sqlalchemy import Column, DateTime, ForeignKey, Integer, JSON, String, UniqueConstraint
 
 from config.database import Base
+from payment.domain.value_objects.payment_environment import PaymentEnvironment
 
 
 class PaymentModel(Base):
@@ -21,6 +22,11 @@ class PaymentModel(Base):
     amount = Column(Integer, nullable=False)
     currency = Column(String, nullable=False)
     credit_amount = Column(Integer, nullable=False)
+    payment_environment = Column(
+        String,
+        nullable=False,
+        default=PaymentEnvironment.UNKNOWN.value,
+    )
     provider_payment_id = Column(String, nullable=True)
     provider_transaction_id = Column(String, nullable=True)
     status = Column(String, nullable=False)

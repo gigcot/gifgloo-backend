@@ -16,6 +16,7 @@ from payment.application.ports.outbound.persistence.async_payment_repository imp
 )
 from payment.application.ports.outbound.persistence.async_transaction import AsyncTransaction
 from payment.domain.value_objects.payment_provider import PaymentProvider
+from payment.domain.value_objects.payment_environment import PaymentEnvironment
 from shared.exceptions import (
     BusinessRuleException,
     ExternalServiceException,
@@ -79,6 +80,7 @@ class HandleTossPayCallbackService(HandleTossPayCallbackPort):
                 amount=verified.amount,
                 currency="KRW",
                 approved_at=verified.paid_at,
+                payment_environment=PaymentEnvironment.LIVE,
                 payload=command.payload,
             )
         )

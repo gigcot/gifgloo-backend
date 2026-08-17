@@ -11,6 +11,7 @@ os.environ.setdefault("ASYNC_DATABASE_URL", "postgresql+asyncpg://postgres:postg
 os.environ.setdefault("JWT_SECRET_KEY", "test-secret-key-with-at-least-32-bytes")
 
 from config.payment import (  # noqa: E402
+    get_confirm_portone_payment_service,
     get_create_payment_order_service,
     get_handle_toss_pay_callback_service,
 )
@@ -31,8 +32,21 @@ class FakeCreatePaymentOrderService:
             credit_amount=50,
             currency="KRW",
             status=PaymentStatus.READY,
-            pay_token="pay-token-1",
-            checkout_page="https://pay.toss.im/checkout/1",
+            order_name="Gifgloo 크레딧 50개",
+        )
+
+
+class FakeConfirmPortOnePaymentService:
+    def __init__(self):
+        self.command = None
+
+    async def execute(self, command):
+        self.command = command
+        return SimpleNamespace(
+            payment_id="payment-1",
+            status=PaymentStatus.APPROVED,
+            already_processed=False,
+            test_payment=True,
         )
 
 
@@ -52,6 +66,7 @@ class FakeHandleTossPayCallbackService:
 class PaymentRoutesTest(unittest.TestCase):
     def setUp(self):
         self.create_service = FakeCreatePaymentOrderService()
+        self.confirm_service = FakeConfirmPortOnePaymentService()
         self.callback_service = FakeHandleTossPayCallbackService()
         app = FastAPI()
         app.include_router(router)
@@ -61,6 +76,9 @@ class PaymentRoutesTest(unittest.TestCase):
         app.dependency_overrides[
             get_handle_toss_pay_callback_service
         ] = lambda: self.callback_service
+        app.dependency_overrides[
+            get_confirm_portone_payment_service
+        ] = lambda: self.confirm_service
         self.client = TestClient(app)
 
     def _set_auth_cookie(self):
@@ -84,6 +102,48 @@ class PaymentRoutesTest(unittest.TestCase):
         self.assertEqual(response.json()["credit_amount"], 50)
         self.assertEqual(self.create_service.command.user_id, "user-1")
         self.assertEqual(self.create_service.command.product_id, "credits_50")
+        self.assertEqual(response.json()["order_name"], "Gifgloo 크레딧 50개")
+
+    def test_completes_portone_payment_for_authenticated_user(self):
+        self._set_auth_cookie()
+
+        response = self.client.post(
+            "/payments/complete",
+            json={"payment_id": "gifgloo_0123456789abcdef0123456789abcdef"},
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(response.json()["test_payment"])
+        self.assertEqual(self.confirm_service.command.expected_user_id, "user-1")
+
+    def test_maps_paid_portone_webhook(self):
+        response = self.client.post(
+            "/payments/portone/webhook",
+            json={
+                "type": "Transaction.Paid",
+                "data": {
+                    "paymentId": "gifgloo_0123456789abcdef0123456789abcdef"
+                },
+            },
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertIsNone(self.confirm_service.command.expected_user_id)
+
+    def test_ignores_non_paid_portone_webhook(self):
+        response = self.client.post(
+            "/payments/portone/webhook",
+            json={
+                "type": "Transaction.Failed",
+                "data": {
+                    "paymentId": "gifgloo_0123456789abcdef0123456789abcdef"
+                },
+            },
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(response.json()["ignored"])
+        self.assertIsNone(self.confirm_service.command)
 
     def test_callback_maps_toss_v2_payload(self):
         order_id = "gifgloo_0123456789abcdef0123456789abcdef"

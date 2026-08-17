@@ -5,26 +5,23 @@ from payment.domain.value_objects.payment_status import PaymentStatus
 
 
 @dataclass(frozen=True)
-class CreatePaymentOrderCommand:
-    user_id: str
-    product_id: str
+class ConfirmPortOnePaymentCommand:
+    payment_id: str
+    expected_user_id: str | None
 
 
 @dataclass(frozen=True)
-class CreatePaymentOrderResult:
+class ConfirmPortOnePaymentResult:
     payment_id: str
-    order_id: str
-    amount: int
-    credit_amount: int
-    currency: str
     status: PaymentStatus
-    order_name: str
+    already_processed: bool
+    test_payment: bool
 
 
-class CreatePaymentOrderPort(ABC):
+class ConfirmPortOnePaymentPort(ABC):
     @abstractmethod
     async def execute(
         self,
-        command: CreatePaymentOrderCommand,
-    ) -> CreatePaymentOrderResult:
+        command: ConfirmPortOnePaymentCommand,
+    ) -> ConfirmPortOnePaymentResult:
         pass

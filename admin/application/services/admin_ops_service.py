@@ -38,6 +38,7 @@ from payment.application.services.process_verified_payment_service import (
     ProcessVerifiedPaymentService,
 )
 from payment.domain.value_objects.payment_provider import PaymentProvider
+from payment.domain.value_objects.payment_environment import PaymentEnvironment
 from payment.domain.value_objects.payment_status import PaymentStatus
 from shared.exceptions import BusinessRuleException, NotFoundException
 
@@ -78,6 +79,7 @@ class AdminOpsService:
                     amount=verified.amount,
                     currency="KRW",
                     approved_at=verified.paid_at,
+                    payment_environment=PaymentEnvironment.LIVE,
                     payload={"source": "ADMIN_RECHECK", "pay_status": verified.pay_status},
                 )
             )
@@ -217,6 +219,8 @@ class AdminOpsService:
             raise BusinessRuleException("결제 사용자와 지급 대상이 다릅니다")
         if payment.status != PaymentStatus.APPROVED:
             raise BusinessRuleException("완료된 결제만 결제 기반 수동 지급할 수 있습니다")
+        if payment.payment_environment != PaymentEnvironment.LIVE:
+            raise BusinessRuleException("실결제만 결제 기반 수동 지급할 수 있습니다")
         if payment.credit_granted_at is not None:
             raise BusinessRuleException("이미 지급 완료 처리된 결제입니다")
         if payment.credit_amount != amount:

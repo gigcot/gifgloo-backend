@@ -3,6 +3,7 @@ from dataclasses import dataclass
 from datetime import datetime
 
 from payment.domain.value_objects.payment_provider import PaymentProvider
+from payment.domain.value_objects.payment_environment import PaymentEnvironment
 from payment.domain.value_objects.payment_status import PaymentStatus
 
 
@@ -17,6 +18,7 @@ class ProcessVerifiedPaymentCommand:
     amount: int
     currency: str
     approved_at: datetime
+    payment_environment: PaymentEnvironment
     payload: dict
 
 

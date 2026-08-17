@@ -7,6 +7,7 @@ from payment.application.ports.outbound.persistence.async_payment_repository imp
 )
 from payment.domain.aggregates.payment import Payment
 from payment.domain.value_objects.payment_provider import PaymentProvider
+from payment.domain.value_objects.payment_environment import PaymentEnvironment
 from payment.domain.value_objects.payment_status import PaymentStatus
 from payment.domain.value_objects.pg_type import PgType
 
@@ -21,6 +22,7 @@ def _to_domain(model: PaymentModel) -> Payment:
     payment.amount = model.amount
     payment.currency = model.currency
     payment.credit_amount = model.credit_amount
+    payment.payment_environment = PaymentEnvironment(model.payment_environment)
     payment.provider_payment_id = model.provider_payment_id
     payment.provider_transaction_id = model.provider_transaction_id
     payment.status = PaymentStatus(model.status)
@@ -48,6 +50,7 @@ class SqlAlchemyAsyncPaymentRepository(AsyncPaymentRepository):
             amount=payment.amount,
             currency=payment.currency,
             credit_amount=payment.credit_amount,
+            payment_environment=payment.payment_environment.value,
             provider_payment_id=payment.provider_payment_id,
             provider_transaction_id=payment.provider_transaction_id,
             status=payment.status.value,
@@ -69,6 +72,7 @@ class SqlAlchemyAsyncPaymentRepository(AsyncPaymentRepository):
             .values(
                 provider_payment_id=payment.provider_payment_id,
                 provider_transaction_id=payment.provider_transaction_id,
+                payment_environment=payment.payment_environment.value,
                 status=payment.status.value,
                 failed_reason=payment.failed_reason,
                 cancel_reason=payment.cancel_reason,

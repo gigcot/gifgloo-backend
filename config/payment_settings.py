@@ -1,13 +1,12 @@
 import os
 
 from shared.exceptions import ExternalServiceException
+from payment.domain.value_objects.payment_environment import PaymentEnvironment
 
 
-TOSS_PAY_REQUIRED_ENV_NAMES = (
-    "TOSS_PAY_API_KEY",
-    "TOSS_PAY_RESULT_CALLBACK_URL",
-    "TOSS_PAY_RETURN_URL",
-    "TOSS_PAY_CANCEL_URL",
+PAYMENT_REQUIRED_ENV_NAMES = (
+    "PORTONE_API_SECRET",
+    "PORTONE_EXPECTED_CHANNEL_TYPE",
 )
 
 
@@ -18,13 +17,25 @@ def required_payment_env(name: str) -> str:
     return value
 
 
+def required_portone_environment() -> PaymentEnvironment:
+    value = required_payment_env("PORTONE_EXPECTED_CHANNEL_TYPE")
+    try:
+        environment = PaymentEnvironment(value)
+    except ValueError as exc:
+        raise ExternalServiceException(
+            "PORTONE_EXPECTED_CHANNEL_TYPE은 TEST 또는 LIVE여야 합니다"
+        ) from exc
+    if environment == PaymentEnvironment.UNKNOWN:
+        raise ExternalServiceException(
+            "PORTONE_EXPECTED_CHANNEL_TYPE은 TEST 또는 LIVE여야 합니다"
+        )
+    return environment
+
+
 def validate_payment_config() -> None:
     if os.getenv("APP_ENV", "development") != "production":
         return
 
-    for name in TOSS_PAY_REQUIRED_ENV_NAMES:
+    for name in PAYMENT_REQUIRED_ENV_NAMES:
         required_payment_env(name)
-
-    api_key = required_payment_env("TOSS_PAY_API_KEY")
-    if api_key.startswith("sk_test_"):
-        raise ExternalServiceException("운영 환경에서 토스페이 테스트 키를 사용할 수 없습니다")
+    required_portone_environment()
