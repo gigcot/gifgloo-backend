@@ -5,8 +5,12 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, Field
 
 from config.payment import (
+    get_confirm_portone_payment_service,
     get_create_payment_order_service,
     get_handle_toss_pay_callback_service,
+)
+from payment.application.ports.inbound.confirm_portone_payment import (
+    ConfirmPortOnePaymentCommand,
 )
 from payment.application.ports.inbound.create_payment_order import (
     CreatePaymentOrderCommand,
@@ -17,10 +21,14 @@ from payment.application.ports.inbound.handle_toss_pay_callback import (
 from payment.application.services.create_payment_order_service import (
     CreatePaymentOrderService,
 )
+from payment.application.services.confirm_portone_payment_service import (
+    ConfirmPortOnePaymentService,
+)
 from payment.application.services.handle_toss_pay_callback_service import (
     HandleTossPayCallbackService,
 )
 from payment.domain.value_objects.payment_product import PAYMENT_PRODUCTS
+from shared.session_token import decode_session_token
 
 router = APIRouter(prefix="/payments", tags=["payments"])
 
@@ -29,6 +37,19 @@ SECRET_KEY = os.getenv("JWT_SECRET_KEY")
 
 class CreatePaymentCheckoutBody(BaseModel):
     product_id: str = Field(min_length=1, max_length=64)
+
+
+class ConfirmPortOnePaymentBody(BaseModel):
+    payment_id: str = Field(min_length=1, max_length=64)
+
+
+class PortOneWebhookData(BaseModel):
+    payment_id: str = Field(alias="paymentId", min_length=1, max_length=64)
+
+
+class PortOneWebhookBody(BaseModel):
+    type: str
+    data: PortOneWebhookData
 
 
 class TossPayCallbackBody(BaseModel):
@@ -56,7 +77,7 @@ def _get_user_id(request: Request) -> str:
     if token is None:
         raise HTTPException(401, "인증이 필요합니다")
     try:
-        payload = jwt.decode(token, SECRET_KEY, algorithms=["HS256"])
+        payload = decode_session_token(token, SECRET_KEY)
         return payload["user_id"]
     except (jwt.PyJWTError, KeyError):
         raise HTTPException(401, "유효하지 않은 토큰입니다")
@@ -95,8 +116,54 @@ async def create_payment_checkout(
         "credit_amount": result.credit_amount,
         "currency": result.currency,
         "status": result.status,
-        "pay_token": result.pay_token,
-        "checkout_page": result.checkout_page,
+        "order_name": result.order_name,
+    }
+
+
+@router.post("/complete")
+async def confirm_portone_payment(
+    body: ConfirmPortOnePaymentBody,
+    request: Request,
+    service: ConfirmPortOnePaymentService = Depends(
+        get_confirm_portone_payment_service
+    ),
+):
+    result = await service.execute(
+        ConfirmPortOnePaymentCommand(
+            payment_id=body.payment_id,
+            expected_user_id=_get_user_id(request),
+        )
+    )
+    return {
+        "ok": True,
+        "payment_id": result.payment_id,
+        "status": result.status,
+        "already_processed": result.already_processed,
+        "test_payment": result.test_payment,
+    }
+
+
+@router.post("/portone/webhook")
+async def handle_portone_webhook(
+    body: PortOneWebhookBody,
+    service: ConfirmPortOnePaymentService = Depends(
+        get_confirm_portone_payment_service
+    ),
+):
+    if body.type != "Transaction.Paid":
+        return {"ok": True, "ignored": True}
+
+    result = await service.execute(
+        ConfirmPortOnePaymentCommand(
+            payment_id=body.data.payment_id,
+            expected_user_id=None,
+        )
+    )
+    return {
+        "ok": True,
+        "payment_id": result.payment_id,
+        "already_processed": result.already_processed,
+        "test_payment": result.test_payment,
     }
 
 

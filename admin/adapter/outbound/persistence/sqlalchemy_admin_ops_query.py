@@ -15,6 +15,7 @@ from credit_account.domain.value_objects.credit_source_type import CreditSourceT
 from credit_account.domain.value_objects.transaction_type import TransactionType
 from composition.domain.value_objects.composition_status import CompositionStatus
 from payment.adapter.outbound.persistence.models import PaymentModel
+from payment.domain.value_objects.payment_environment import PaymentEnvironment
 from payment.domain.value_objects.payment_status import PaymentStatus
 from user.adapter.outbound.persistence.models import UserModel
 
@@ -59,6 +60,7 @@ class SqlAlchemyAdminOpsQuery:
             select(func.coalesce(func.sum(PaymentModel.amount), 0)).where(
                 PaymentModel.approved_at >= day_start,
                 PaymentModel.status == PaymentStatus.APPROVED.value,
+                PaymentModel.payment_environment == PaymentEnvironment.LIVE.value,
             )
         )
         today_ready_payments = await self._session.scalar(
@@ -82,6 +84,7 @@ class SqlAlchemyAdminOpsQuery:
         missing_credit_candidates = await self._session.scalar(
             select(func.count()).select_from(PaymentModel).where(
                 PaymentModel.status == PaymentStatus.APPROVED.value,
+                PaymentModel.payment_environment == PaymentEnvironment.LIVE.value,
                 PaymentModel.credit_granted_at.is_(None),
                 ~payment_credit_exists,
             )
@@ -228,6 +231,7 @@ class SqlAlchemyAdminOpsQuery:
     def _payment_dict(self, payment: PaymentModel, credit_transaction_exists: bool) -> dict:
         needs_credit_grant = (
             payment.status == PaymentStatus.APPROVED.value
+            and payment.payment_environment == PaymentEnvironment.LIVE.value
             and payment.credit_granted_at is None
             and not credit_transaction_exists
         )
@@ -239,6 +243,7 @@ class SqlAlchemyAdminOpsQuery:
             "amount": payment.amount,
             "currency": payment.currency,
             "credit_amount": payment.credit_amount,
+            "payment_environment": payment.payment_environment,
             "provider_payment_id": payment.provider_payment_id,
             "provider_transaction_id": payment.provider_transaction_id,
             "status": payment.status,

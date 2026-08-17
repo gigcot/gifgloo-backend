@@ -15,6 +15,7 @@ from payment.application.services.handle_toss_pay_callback_service import (
 )
 from payment.domain.aggregates.payment import Payment
 from payment.domain.value_objects.payment_provider import PaymentProvider
+from payment.domain.value_objects.payment_environment import PaymentEnvironment
 from payment.domain.value_objects.payment_status import PaymentStatus
 from shared.exceptions import BusinessRuleException, NotFoundException
 
@@ -119,6 +120,10 @@ class HandleTossPayCallbackServiceTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(process_payment.command.provider, PaymentProvider.TOSS_PAY)
         self.assertEqual(process_payment.command.amount, 6600)
         self.assertEqual(process_payment.command.external_event_id, "transaction-1")
+        self.assertEqual(
+            process_payment.command.payment_environment,
+            PaymentEnvironment.LIVE,
+        )
         self.assertEqual(transaction.commit_count, 1)
         self.assertEqual(transaction.rollback_count, 0)
 

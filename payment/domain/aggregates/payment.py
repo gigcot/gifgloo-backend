@@ -4,6 +4,7 @@ from datetime import datetime, timezone
 import uuid
 
 from payment.domain.value_objects.payment_provider import PaymentProvider
+from payment.domain.value_objects.payment_environment import PaymentEnvironment
 from payment.domain.value_objects.payment_status import PaymentStatus
 from payment.domain.value_objects.pg_type import PgType
 from shared.exceptions import BusinessRuleException, InvalidStateException
@@ -18,6 +19,7 @@ class Payment:
         credit_amount: int,
         order_id: str | None = None,
         currency: str = "KRW",
+        payment_environment: PaymentEnvironment = PaymentEnvironment.UNKNOWN,
     ):
         if amount <= 0:
             raise BusinessRuleException("결제 금액은 0보다 커야 합니다")
@@ -32,6 +34,7 @@ class Payment:
         self.amount = amount
         self.currency = currency
         self.credit_amount = credit_amount
+        self.payment_environment = payment_environment
         self.provider_payment_id: str | None = None
         self.provider_transaction_id: str | None = None
         self.created_at: datetime = datetime.now(timezone.utc)
@@ -111,6 +114,20 @@ class Payment:
         if self.currency != currency:
             raise BusinessRuleException("주문의 결제 통화가 일치하지 않습니다")
 
+    def assign_payment_environment(
+        self,
+        payment_environment: PaymentEnvironment,
+    ) -> None:
+        if payment_environment == PaymentEnvironment.UNKNOWN:
+            raise BusinessRuleException("검증되지 않은 결제 환경입니다")
+        if (
+            self.payment_environment != PaymentEnvironment.UNKNOWN
+            and self.payment_environment != payment_environment
+        ):
+            raise InvalidStateException("이미 다른 결제 환경이 연결되어 있습니다")
+        self.payment_environment = payment_environment
+        self._touch()
+
     def cancel(self, reason: str, canceled_at: datetime | None = None) -> None:
         if self.status == PaymentStatus.CANCELED:
             return
@@ -137,7 +154,11 @@ class Payment:
         self._touch()
 
     def can_grant_credit(self) -> bool:
-        return self.status == PaymentStatus.APPROVED and self.credit_granted_at is None
+        return (
+            self.status == PaymentStatus.APPROVED
+            and self.payment_environment == PaymentEnvironment.LIVE
+            and self.credit_granted_at is None
+        )
 
     def start(self) -> None:
         self.authorize()

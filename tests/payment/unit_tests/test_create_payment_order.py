@@ -6,9 +6,8 @@ from payment.application.ports.inbound.create_payment_order import (
 from payment.application.services.create_payment_order_service import (
     CreatePaymentOrderService,
 )
-from payment.application.ports.outbound.payment_gateway.toss_pay_gateway import (
-    CreateTossPayCheckoutResult,
-)
+from payment.domain.value_objects.payment_provider import PaymentProvider
+from payment.domain.value_objects.payment_environment import PaymentEnvironment
 from payment.domain.value_objects.payment_status import PaymentStatus
 from shared.exceptions import AuthorizationException, BusinessRuleException
 
@@ -44,28 +43,14 @@ class FakeTransaction:
         self.rollback_count += 1
 
 
-class FakeTossPayGateway:
-    def __init__(self):
-        self.create_command = None
-
-    async def create_checkout(self, command):
-        self.create_command = command
-        return CreateTossPayCheckoutResult(
-            pay_token="pay-token-1",
-            checkout_page="https://pay.toss.im/checkout/1",
-        )
-
-
 class CreatePaymentOrderServiceTest(unittest.IsolatedAsyncioTestCase):
     async def test_creates_ready_payment_from_trusted_pricing(self):
         repository = FakePaymentRepository()
         transaction = FakeTransaction()
-        gateway = FakeTossPayGateway()
         service = CreatePaymentOrderService(
             user_verification=FakeUserVerification(active=True),
             payment_repo=repository,
             transaction=transaction,
-            toss_pay_gateway=gateway,
         )
 
         result = await service.execute(CreatePaymentOrderCommand(
@@ -76,11 +61,15 @@ class CreatePaymentOrderServiceTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result.status, PaymentStatus.READY)
         self.assertEqual(result.amount, 6600)
         self.assertEqual(result.credit_amount, 50)
-        self.assertEqual(result.pay_token, "pay-token-1")
+        self.assertEqual(result.order_name, "Gifgloo 크레딧 50개")
         self.assertEqual(repository.payment.credit_amount, 50)
-        self.assertEqual(repository.payment.provider_payment_id, "pay-token-1")
-        self.assertEqual(gateway.create_command.amount, 6600)
-        self.assertEqual(transaction.commit_count, 2)
+        self.assertEqual(repository.payment.provider, PaymentProvider.KG_INICIS)
+        self.assertEqual(
+            repository.payment.payment_environment,
+            PaymentEnvironment.UNKNOWN,
+        )
+        self.assertIsNone(repository.payment.provider_payment_id)
+        self.assertEqual(transaction.commit_count, 1)
         self.assertEqual(transaction.rollback_count, 0)
 
     async def test_rejects_inactive_user_before_creating_order(self):
@@ -90,7 +79,6 @@ class CreatePaymentOrderServiceTest(unittest.IsolatedAsyncioTestCase):
             user_verification=FakeUserVerification(active=False),
             payment_repo=repository,
             transaction=transaction,
-            toss_pay_gateway=FakeTossPayGateway(),
         )
 
         with self.assertRaises(AuthorizationException):
@@ -106,12 +94,10 @@ class CreatePaymentOrderServiceTest(unittest.IsolatedAsyncioTestCase):
     async def test_rejects_unknown_product_before_creating_order(self):
         repository = FakePaymentRepository()
         transaction = FakeTransaction()
-        gateway = FakeTossPayGateway()
         service = CreatePaymentOrderService(
             user_verification=FakeUserVerification(active=True),
             payment_repo=repository,
             transaction=transaction,
-            toss_pay_gateway=gateway,
         )
 
         with self.assertRaises(BusinessRuleException):
@@ -121,5 +107,4 @@ class CreatePaymentOrderServiceTest(unittest.IsolatedAsyncioTestCase):
             ))
 
         self.assertIsNone(repository.payment)
-        self.assertIsNone(gateway.create_command)
         self.assertEqual(transaction.commit_count, 0)

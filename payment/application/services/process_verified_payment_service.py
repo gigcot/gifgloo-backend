@@ -67,6 +67,7 @@ class ProcessVerifiedPaymentService(ProcessVerifiedPaymentPort):
                 amount=command.amount,
                 currency=command.currency,
             )
+            payment.assign_payment_environment(command.payment_environment)
             payment.approve(
                 provider_payment_id=command.provider_payment_id,
                 provider_transaction_id=command.provider_transaction_id,

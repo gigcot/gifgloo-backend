@@ -17,6 +17,11 @@ class AuthorizationException(DomainException):
     pass
 
 
+class AuthenticationException(DomainException):
+    """인증 실패 → 401"""
+    pass
+
+
 class InvalidStateException(DomainException):
     """상태 전이 불가 → 409"""
     pass

@@ -13,6 +13,7 @@ from credit_account.application.services.deduct_credit_service import DeductCred
 from credit_account.application.services.get_credit_balance_service import GetCreditBalanceService
 from credit_account.application.services.get_credit_history_service import GetCreditHistoryService
 from config.credit import get_credit_balance_service
+from shared.session_token import decode_session_token
 
 router = APIRouter(prefix="/credits", tags=["credits"])
 
@@ -24,7 +25,7 @@ def _get_user_id(request: Request) -> str:
     if not token:
         raise HTTPException(401, "인증이 필요합니다")
     try:
-        payload = jwt.decode(token, SECRET_KEY, algorithms=["HS256"])
+        payload = decode_session_token(token, SECRET_KEY)
         return payload["user_id"]
     except Exception:
         raise HTTPException(401, "유효하지 않은 토큰입니다")

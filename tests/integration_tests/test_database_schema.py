@@ -51,6 +51,15 @@ class DatabaseSchemaIntegrationTest(unittest.TestCase):
             ["provider", "provider_payment_id"],
         )
 
+    def test_payment_environment_is_required(self):
+        columns = {
+            column["name"]: column
+            for column in inspect(engine).get_columns("payments")
+        }
+
+        self.assertIn("payment_environment", columns)
+        self.assertFalse(columns["payment_environment"]["nullable"])
+
     def test_can_persist_core_records(self):
         now = datetime.now(timezone.utc)
         user_id = f"integration-user-{uuid4()}"
@@ -72,6 +81,7 @@ class DatabaseSchemaIntegrationTest(unittest.TestCase):
                     amount=5000,
                     currency="KRW",
                     credit_amount=100,
+                    payment_environment="LIVE",
                     provider_payment_id=payment_id,
                     provider_transaction_id=payment_id,
                     status="APPROVED",
@@ -150,6 +160,10 @@ class DatabaseSchemaIntegrationTest(unittest.TestCase):
                 payment_id,
             )
             self.assertEqual(session.get(PaymentModel, payment_id).credit_amount, 100)
+            self.assertEqual(
+                session.get(PaymentModel, payment_id).payment_environment,
+                "LIVE",
+            )
             self.assertEqual(session.get(PaymentInboxModel, event_id).status, "PROCESSED")
             self.assertEqual(session.get(AssetModel, asset_id).user_id, user_id)
             self.assertEqual(session.get(CompositionJobModel, job_id).spec["mode"], "integration")
