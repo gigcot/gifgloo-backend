@@ -3,10 +3,16 @@ import jwt
 from dotenv import load_dotenv
 from fastapi import APIRouter, Depends
 from fastapi.responses import RedirectResponse, Response
-from sqlalchemy.orm import Session
+from pydantic import BaseModel
 
-from config.user import get_kakao_social_login_service, get_google_social_login_service
+from config.user import (
+    get_google_social_login_service,
+    get_kakao_social_login_service,
+    get_review_login_service,
+)
+from user.application.ports.inbound.review_login import ReviewLoginCommand
 from user.application.ports.inbound.social_login import SocialLoginCommand
+from user.application.services.review_login_service import ReviewLoginService
 from user.application.services.social_login_service import SocialLoginService
 from user.domain.value_objects.social_account import SocialProvider
 
@@ -24,21 +30,49 @@ FRONTEND_CALLBACK_URL = os.getenv("FRONTEND_CALLBACK_URL")
 SECRET_KEY = os.getenv("JWT_SECRET_KEY")
 
 
-def _issue_jwt(user_id: str) -> str:
-    return jwt.encode({"user_id": user_id}, SECRET_KEY, algorithm="HS256")
+def _issue_jwt(user_id: str, review_login: bool = False) -> str:
+    payload: dict[str, str | bool] = {"user_id": user_id}
+    if review_login:
+        payload["review_login"] = True
+    return jwt.encode(payload, SECRET_KEY, algorithm="HS256")
 
 
-def _redirect_with_cookie(user_id: str, is_new_user: bool = False) -> RedirectResponse:
-    token = _issue_jwt(user_id)
-    url = f"{FRONTEND_CALLBACK_URL}?is_new_user=true" if is_new_user else FRONTEND_CALLBACK_URL
-    response = RedirectResponse(url=url)
+def _set_user_cookie(
+    response: Response,
+    user_id: str,
+    review_login: bool = False,
+) -> None:
     response.set_cookie(
         key="user_token",
-        value=token,
+        value=_issue_jwt(user_id, review_login),
         httponly=True,
         samesite="lax",
         secure=os.getenv("COOKIE_SECURE").lower() == "true",
     )
+
+
+def _redirect_with_cookie(user_id: str, is_new_user: bool = False) -> RedirectResponse:
+    url = f"{FRONTEND_CALLBACK_URL}?is_new_user=true" if is_new_user else FRONTEND_CALLBACK_URL
+    response = RedirectResponse(url=url)
+    _set_user_cookie(response, user_id)
+    return response
+
+
+class ReviewLoginBody(BaseModel):
+    login_id: str
+    password: str
+
+
+@router.post("/review-login", status_code=204)
+def review_login(
+    body: ReviewLoginBody,
+    service: ReviewLoginService = Depends(get_review_login_service),
+) -> Response:
+    result = service.execute(
+        ReviewLoginCommand(login_id=body.login_id, password=body.password)
+    )
+    response = Response(status_code=204)
+    _set_user_cookie(response, result.user_id, review_login=True)
     return response
 
 

@@ -6,6 +6,7 @@ from fastapi.responses import JSONResponse
 from shared.exceptions import (
     DomainException,
     NotFoundException,
+    AuthenticationException,
     AuthorizationException,
     InvalidStateException,
     BusinessRuleException,
@@ -17,6 +18,7 @@ from shared.exceptions import (
 
 STATUS_MAP: dict[type[DomainException], int] = {
     NotFoundException: 404,
+    AuthenticationException: 401,
     AuthorizationException: 403,
     InvalidStateException: 409,
     BusinessRuleException: 400,

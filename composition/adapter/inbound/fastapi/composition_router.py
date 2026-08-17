@@ -24,6 +24,7 @@ from shared.metrics import (
     SSE_FAILED_TOTAL,
 )
 from shared.request_context import current_request_path
+from shared.session_token import decode_session_token
 
 router = APIRouter(prefix="/compositions", tags=["composition"])
 logger = logging.getLogger(__name__)
@@ -36,7 +37,7 @@ def _get_user_id(request: Request) -> str:
     if not token:
         raise HTTPException(401, "인증이 필요합니다")
     try:
-        payload = jwt.decode(token, SECRET_KEY, algorithms=["HS256"])
+        payload = decode_session_token(token, SECRET_KEY)
         return payload["user_id"]
     except Exception:
         raise HTTPException(401, "유효하지 않은 토큰입니다")

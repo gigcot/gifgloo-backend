@@ -5,6 +5,7 @@ from enum import Enum
 class SocialProvider(Enum):
     KAKAO  = "KAKAO"
     GOOGLE = "GOOGLE"
+    REVIEW = "REVIEW"
 
 
 @dataclass(frozen=True)

@@ -23,6 +23,7 @@ from config.asset import (
     get_shared_asset_service,
 )
 from shared.asset_category import AssetCategory
+from shared.session_token import decode_session_token
 
 router = APIRouter(prefix="/assets", tags=["assets"])
 
@@ -34,7 +35,7 @@ def _get_user_id(request: Request) -> str:
     if not token:
         raise HTTPException(401, "인증이 필요합니다")
     try:
-        payload = jwt.decode(token, SECRET_KEY, algorithms=["HS256"])
+        payload = decode_session_token(token, SECRET_KEY)
         return payload["user_id"]
     except Exception:
         raise HTTPException(401, "유효하지 않은 토큰입니다")

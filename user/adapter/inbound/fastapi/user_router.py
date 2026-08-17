@@ -4,7 +4,8 @@ import jwt
 from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel
 
-from config.user import get_record_signup_consent_service
+from config.user import get_record_signup_consent_service, get_user_service
+from shared.session_token import decode_session_token
 from user.application.ports.inbound.change_role import ChangeRoleCommand
 from user.application.ports.inbound.deactivate_user import DeactivateUserCommand
 from user.application.ports.inbound.get_user import GetUserQuery
@@ -43,22 +44,19 @@ def _get_user_id(request: Request) -> str:
     if token is None:
         raise HTTPException(401, "유효하지 않은 사용자입니다")
     try:
-        payload = jwt.decode(token, SECRET_KEY, algorithms=["HS256"])
+        payload = decode_session_token(token, SECRET_KEY)
         return payload["user_id"]
     except (jwt.InvalidTokenError, KeyError):
         raise HTTPException(401, "유효하지 않은 사용자입니다")
 
 
 @router.get("/me")
-async def is_signed_in(request: Request):
-    token = request.cookies.get("user_token")
-    if token is None:
-        raise HTTPException(401, "유효하지 않은 사용자입니다")
-    try:
-        jwt.decode(token, SECRET_KEY, algorithms=["HS256"])
-    except jwt.InvalidTokenError:
-        raise HTTPException(401, "유효하지 않은 사용자입니다")
-    return {"ok": True}
+def get_current_user(
+    request: Request,
+    service: GetUserService = Depends(get_user_service),
+):
+    result = service.execute(GetUserQuery(user_id=_get_user_id(request)))
+    return {"ok": True, "email": result.email}
 
 
 @router.post("/me/consents")
