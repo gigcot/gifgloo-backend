@@ -33,6 +33,7 @@ from payment.domain.aggregates.payment import Payment
 from payment.domain.value_objects.payment_provider import PaymentProvider
 from payment.domain.value_objects.payment_environment import PaymentEnvironment
 from payment.domain.value_objects.payment_status import PaymentStatus
+from payment.domain.value_objects.payment_purpose import PaymentPurpose
 from shared.exceptions import (
     BusinessRuleException,
     ExternalServiceException,
@@ -201,6 +202,7 @@ class ConfirmPortOnePaymentServiceTest(unittest.IsolatedAsyncioTestCase):
             provider=PaymentProvider.KG_INICIS,
             amount=6600,
             credit_amount=50,
+            purpose=PaymentPurpose.COMPOSITION_PASS_PURCHASE,
             order_id="gifgloo_order_1",
         )
         self.payment_repo = FakePaymentRepository(self.payment)
@@ -288,7 +290,6 @@ class ConfirmPortOnePaymentServiceTest(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(self.credit.call_count, 0)
 
-
 class FakePortOneResponse:
     def __init__(self, payload):
         self._payload = payload
@@ -349,7 +350,6 @@ class PortOneHttpAdapterTest(unittest.IsolatedAsyncioTestCase):
                 await PortOneHttpAdapter("secret").get_payment(
                     GetPortOnePaymentCommand(payment_id="payment-1")
                 )
-
 
 class PaymentSettingsTest(unittest.TestCase):
     def test_reads_test_environment(self):

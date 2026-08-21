@@ -233,6 +233,7 @@ class AdminOpsService:
                 user_id=user_id,
                 amount=amount,
                 payment_id=payment.id,
+                granted_at=payment.approved_at,
             )
         )
         if not granted.granted:

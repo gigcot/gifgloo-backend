@@ -34,15 +34,16 @@ class CreatePaymentOrderService(CreatePaymentOrderPort):
         if not await self._user_verification.is_active_user(command.user_id):
             raise AuthorizationException("유효하지 않은 유저입니다")
 
-        product = get_payment_product(command.product_id)
-        payment = Payment(
-            user_id=command.user_id,
-            provider=PaymentProvider.KG_INICIS,
-            amount=product.amount,
-            credit_amount=product.credit_amount,
-            currency=product.currency,
-        )
         try:
+            product = get_payment_product(command.product_id)
+            payment = Payment(
+                user_id=command.user_id,
+                provider=PaymentProvider.KG_INICIS,
+                amount=product.amount,
+                credit_amount=product.credit_amount,
+                purpose=product.purpose,
+                currency=product.currency,
+            )
             await self._payment_repo.add(payment)
             await self._transaction.commit()
         except Exception:
@@ -54,6 +55,7 @@ class CreatePaymentOrderService(CreatePaymentOrderPort):
             order_id=payment.order_id,
             amount=payment.amount,
             credit_amount=payment.credit_amount,
+            purpose=payment.purpose,
             currency=payment.currency,
             status=payment.status,
             order_name=product.name,

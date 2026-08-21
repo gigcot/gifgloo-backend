@@ -80,6 +80,7 @@ class ProcessVerifiedPaymentService(ProcessVerifiedPaymentPort):
                         user_id=payment.user_id,
                         amount=payment.credit_amount,
                         payment_id=payment.id,
+                        granted_at=command.approved_at,
                     )
                 )
                 payment.mark_credit_granted()

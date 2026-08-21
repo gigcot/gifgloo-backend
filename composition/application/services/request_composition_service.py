@@ -1,28 +1,52 @@
 from composition.application.ports.inbound.request_composition import (
-    RequestCompositionPort,
     RequestCompositionCommand,
+    RequestCompositionPort,
     RequestCompositionResult,
 )
-from composition.domain.value_objects.composition_policy import MAX_FRAMES, ALLOWED_IMAGE_SIGNATURES
-from shared.exceptions import ConfirmationRequiredException, BusinessRuleException, AuthorizationException, ValidationException, InsufficientCreditException
+from composition.application.ports.outbound.aws.feasibility_check_port import (
+    FeasibilityCheckCommand,
+    FeasibilityCheckPort,
+)
+from composition.application.ports.outbound.aws.pipeline_trigger_port import (
+    PipelineTriggerCommand,
+    PipelineTriggerPort,
+)
+from composition.application.ports.outbound.aws.storage_port import StorageCategory, StoragePort
+from composition.application.ports.outbound.domain_bridges.asset_save_port import (
+    AssetSaveCommand,
+    AssetSavePort,
+)
+from composition.application.ports.outbound.domain_bridges.credit_port import CreditPort
+from composition.application.ports.outbound.domain_bridges.user_verification_port import (
+    UserVerificationPort,
+)
+from composition.application.ports.outbound.persistence.async_composition_repository import (
+    AsyncCompositionRepository,
+)
+from composition.application.ports.outbound.persistence.async_transaction import AsyncTransaction
+from composition.domain.aggregates.composition_job import CompositionJob
+from composition.domain.value_objects.composition_policy import ALLOWED_IMAGE_SIGNATURES, MAX_FRAMES
+from shared.asset_category import AssetCategory
+from shared.exceptions import (
+    AuthorizationException,
+    BusinessRuleException,
+    ConfirmationRequiredException,
+    InsufficientCreditException,
+    NotFoundException,
+    ValidationException,
+)
+from shared.metrics import (
+    COMPOSITION_CREATED_TOTAL,
+    CREDIT_DEDUCT_TOTAL,
+    CREDIT_REFUND_TOTAL,
+)
 
 
 def _validate_image_format(data: bytes) -> None:
-    for sig in ALLOWED_IMAGE_SIGNATURES:
-        if data[:len(sig)] == sig:
+    for signature in ALLOWED_IMAGE_SIGNATURES:
+        if data[:len(signature)] == signature:
             return
     raise ValidationException("지원하지 않는 이미지 형식입니다. PNG, JPEG만 지원합니다.")
-from composition.application.ports.outbound.aws.feasibility_check_port import FeasibilityCheckPort, FeasibilityCheckCommand
-from composition.application.ports.outbound.aws.storage_port import StoragePort, StorageCategory
-from composition.application.ports.outbound.aws.pipeline_trigger_port import PipelineTriggerPort, PipelineTriggerCommand
-from composition.application.ports.outbound.domain_bridges.credit_port import CreditPort
-from composition.application.ports.outbound.domain_bridges.user_verification_port import UserVerificationPort
-from composition.application.ports.outbound.persistence.async_composition_repository import AsyncCompositionRepository
-from composition.application.ports.outbound.persistence.async_transaction import AsyncTransaction
-from composition.application.ports.outbound.domain_bridges.asset_save_port import AssetSaveCommand, AssetSavePort
-from shared.asset_category import AssetCategory
-from composition.domain.aggregates.composition_job import CompositionJob
-from shared.metrics import COMPOSITION_CREATED_TOTAL, CREDIT_DEDUCT_TOTAL, CREDIT_REFUND_TOTAL
 
 
 class RequestCompositionService(RequestCompositionPort):
@@ -49,59 +73,58 @@ class RequestCompositionService(RequestCompositionPort):
     async def execute(self, command: RequestCompositionCommand) -> RequestCompositionResult:
         if not await self._user_verification.is_active_user(command.user_id):
             raise AuthorizationException("유효하지 않은 유저입니다")
-
-        if not await self._credit.has_enough_credit(command.user_id):
-            raise InsufficientCreditException("크레딧이 부족합니다")
-
         _validate_image_format(command.target_bytes)
+        if not await self._credit.has_enough_credit(command.user_id):
+            raise InsufficientCreditException("사용 가능한 GIF 합성 이용권이 없습니다")
 
-        # Release the read transaction before awaiting remote feasibility and storage calls.
         await self._transaction.rollback()
-
-        feasibility = await self._feasibility.check(FeasibilityCheckCommand(gif_url=command.gif_url))
+        feasibility = await self._feasibility.check(
+            FeasibilityCheckCommand(gif_url=command.gif_url)
+        )
         if not feasibility.ok:
             raise BusinessRuleException(feasibility.reason)
-
         if feasibility.frame_count > MAX_FRAMES and not command.acknowledge_frame_reduction:
             raise ConfirmationRequiredException(
                 message=f"GIF가 {feasibility.frame_count}프레임입니다. {MAX_FRAMES}프레임으로 줄여서 진행됩니다.",
                 code="FRAME_REDUCTION_REQUIRED",
-                proposal={"frame_count": feasibility.frame_count, "max_frames": MAX_FRAMES},
+                proposal={
+                    "frame_count": feasibility.frame_count,
+                    "max_frames": MAX_FRAMES,
+                },
             )
 
         job = CompositionJob(user_id=command.user_id)
         job.gif_url = command.gif_url
-
-        target_key = await self._storage.upload(job.id, StorageCategory.TARGET, command.target_bytes)
-
+        target_key = await self._storage.upload(
+            job.id,
+            StorageCategory.TARGET,
+            command.target_bytes,
+        )
         target_url = self._storage.public_url_for(target_key)
-
         job.source_gif_url = command.gif_url
         job.target_url = target_url
+
         try:
             job.source_gif_asset_id = await self._asset_save.save(
-                AssetSaveCommand(user_id=command.user_id, category=AssetCategory.KLIPY_GIF, url=command.gif_url)
+                AssetSaveCommand(
+                    user_id=command.user_id,
+                    category=AssetCategory.KLIPY_GIF,
+                    url=command.gif_url,
+                )
             )
             job.target_asset_id = await self._asset_save.save(
-                AssetSaveCommand(user_id=command.user_id, category=AssetCategory.USER_UPLOAD, url=target_url)
+                AssetSaveCommand(
+                    user_id=command.user_id,
+                    category=AssetCategory.USER_UPLOAD,
+                    url=target_url,
+                )
             )
-
             job.start_processing()
             await self._composition_repo.add(job)
+            await self._credit.deduct(command.user_id, job.id)
             COMPOSITION_CREATED_TOTAL.inc()
-
-            try:
-                await self._credit.deduct(command.user_id, job.id)
-                CREDIT_DEDUCT_TOTAL.inc()
-            except Exception as e:
-                job.fail(str(e))
-                await self._composition_repo.update(job)
-                await self._transaction.commit()
-                raise BusinessRuleException(str(e))
-
+            CREDIT_DEDUCT_TOTAL.inc()
             await self._transaction.commit()
-        except BusinessRuleException:
-            raise
         except Exception:
             await self._transaction.rollback()
             raise
@@ -116,12 +139,19 @@ class RequestCompositionService(RequestCompositionPort):
                     max_frames=MAX_FRAMES,
                 )
             )
-        except Exception as e:
-            await self._credit.refund(command.user_id, job.id)
-            CREDIT_REFUND_TOTAL.inc()
-            job.fail(str(e))
-            await self._composition_repo.update(job)
-            await self._transaction.commit()
+        except Exception as exc:
+            try:
+                failed_job = await self._composition_repo.find_for_update(job.id)
+                if failed_job is None:
+                    raise NotFoundException("합성 작업을 찾을 수 없습니다") from exc
+                await self._credit.refund(failed_job.user_id, failed_job.id)
+                CREDIT_REFUND_TOTAL.inc()
+                failed_job.fail(str(exc))
+                await self._composition_repo.update(failed_job)
+                await self._transaction.commit()
+            except Exception:
+                await self._transaction.rollback()
+                raise
             raise
 
         return RequestCompositionResult(composition_job_id=job.id)

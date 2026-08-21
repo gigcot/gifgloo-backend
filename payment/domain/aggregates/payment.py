@@ -6,6 +6,7 @@ import uuid
 from payment.domain.value_objects.payment_provider import PaymentProvider
 from payment.domain.value_objects.payment_environment import PaymentEnvironment
 from payment.domain.value_objects.payment_status import PaymentStatus
+from payment.domain.value_objects.payment_purpose import PaymentPurpose
 from payment.domain.value_objects.pg_type import PgType
 from shared.exceptions import BusinessRuleException, InvalidStateException
 
@@ -17,6 +18,7 @@ class Payment:
         provider: PaymentProvider | PgType,
         amount: int,
         credit_amount: int,
+        purpose: PaymentPurpose = PaymentPurpose.COMPOSITION_PASS_PURCHASE,
         order_id: str | None = None,
         currency: str = "KRW",
         payment_environment: PaymentEnvironment = PaymentEnvironment.UNKNOWN,
@@ -34,6 +36,7 @@ class Payment:
         self.amount = amount
         self.currency = currency
         self.credit_amount = credit_amount
+        self.purpose = purpose
         self.payment_environment = payment_environment
         self.provider_payment_id: str | None = None
         self.provider_transaction_id: str | None = None

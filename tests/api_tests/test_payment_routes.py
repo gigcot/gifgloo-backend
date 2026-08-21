@@ -17,6 +17,7 @@ from config.payment import (  # noqa: E402
 )
 from payment.adapter.inbound.fastapi.payment_router import router  # noqa: E402
 from payment.domain.value_objects.payment_status import PaymentStatus  # noqa: E402
+from payment.domain.value_objects.payment_purpose import PaymentPurpose  # noqa: E402
 
 
 class FakeCreatePaymentOrderService:
@@ -30,9 +31,10 @@ class FakeCreatePaymentOrderService:
             order_id="order-1",
             amount=6600,
             credit_amount=50,
+            purpose=PaymentPurpose.COMPOSITION_PASS_PURCHASE,
             currency="KRW",
             status=PaymentStatus.READY,
-            order_name="Gifgloo 크레딧 50개",
+            order_name="GIF 합성 5회 이용권",
         )
 
 
@@ -94,15 +96,30 @@ class PaymentRoutesTest(unittest.TestCase):
 
         response = self.client.post(
             "/payments/checkout",
-            json={"product_id": "credits_50", "amount": 1, "credit_amount": 999999},
+            json={
+                "product_id": "composition_pass_5_7d",
+                "amount": 1,
+                "credit_amount": 999999,
+            },
         )
 
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.json()["amount"], 6600)
         self.assertEqual(response.json()["credit_amount"], 50)
         self.assertEqual(self.create_service.command.user_id, "user-1")
-        self.assertEqual(self.create_service.command.product_id, "credits_50")
-        self.assertEqual(response.json()["order_name"], "Gifgloo 크레딧 50개")
+        self.assertEqual(self.create_service.command.product_id, "composition_pass_5_7d")
+        self.assertEqual(response.json()["order_name"], "GIF 합성 5회 이용권")
+
+    def test_products_exposes_only_five_use_pass(self):
+        response = self.client.get("/payments/products")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(
+            [product["id"] for product in response.json()],
+            ["composition_pass_5_7d"],
+        )
+        self.assertEqual(response.json()[0]["usage_count"], 5)
+        self.assertEqual(response.json()[0]["validity_days"], 7)
 
     def test_completes_portone_payment_for_authenticated_user(self):
         self._set_auth_cookie()

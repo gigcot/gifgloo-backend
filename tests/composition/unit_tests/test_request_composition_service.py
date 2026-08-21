@@ -13,8 +13,6 @@ class _UserVerification:
 
 class _Credit:
     def __init__(self):
-        self.deducted = False
-        self.refunded = False
         self.deducted_job_id = None
         self.refunded_job_id = None
 
@@ -22,11 +20,9 @@ class _Credit:
         return True
 
     async def deduct(self, user_id: str, job_id: str) -> None:
-        self.deducted = True
         self.deducted_job_id = job_id
 
     async def refund(self, user_id: str, job_id: str) -> None:
-        self.refunded = True
         self.refunded_job_id = job_id
 
 
@@ -36,10 +32,10 @@ class _Feasibility:
 
 
 class _Storage:
-    async def upload(self, job_id, category, data) -> str:
-        return f"target/{job_id}"
+    async def upload(self, job_id, category, data):
+        return f"compositions/{job_id}/target.png"
 
-    def public_url_for(self, key: str) -> str:
+    def public_url_for(self, key):
         return f"https://assets.example/{key}"
 
 
@@ -47,29 +43,37 @@ class _AssetSave:
     def __init__(self):
         self.calls = 0
 
-    async def save(self, command) -> str:
+    async def save(self, command):
         self.calls += 1
         return f"asset-{self.calls}"
 
 
 class _Pipeline:
     def __init__(self, fail: bool = False):
-        self._fail = fail
+        self.fail = fail
+        self.commands = []
 
     async def trigger(self, command) -> None:
-        if self._fail:
+        self.commands.append(command)
+        if self.fail:
             raise RuntimeError("pipeline unavailable")
 
 
 class _Writer:
     def __init__(self):
-        self.jobs = []
+        self.job = None
+        self.saves = 0
 
-    async def add(self, job) -> None:
-        self.jobs.append((job.id, job.status, job.failed_reason))
+    async def add(self, job):
+        self.job = job
+        self.saves += 1
 
-    async def update(self, job) -> None:
-        self.jobs.append((job.id, job.status, job.failed_reason))
+    async def update(self, job):
+        self.job = job
+        self.saves += 1
+
+    async def find_for_update(self, job_id):
+        return self.job if self.job and self.job.id == job_id else None
 
 
 class _Transaction:
@@ -77,10 +81,10 @@ class _Transaction:
         self.commits = 0
         self.rollbacks = 0
 
-    async def commit(self) -> None:
+    async def commit(self):
         self.commits += 1
 
-    async def rollback(self) -> None:
+    async def rollback(self):
         self.rollbacks += 1
 
 
@@ -89,24 +93,21 @@ class RequestCompositionServiceTest(unittest.IsolatedAsyncioTestCase):
         credit = _Credit()
         writer = _Writer()
         transaction = _Transaction()
-        return (
-            RequestCompositionService(
-                user_verification=_UserVerification(),
-                credit=credit,
-                feasibility=_Feasibility(),
-                storage=_Storage(),
-                asset_save=_AssetSave(),
-                pipeline_trigger=pipeline,
-                composition_repo=writer,
-                transaction=transaction,
-            ),
-            credit,
-            writer,
-            transaction,
+        service = RequestCompositionService(
+            user_verification=_UserVerification(),
+            credit=credit,
+            feasibility=_Feasibility(),
+            storage=_Storage(),
+            asset_save=_AssetSave(),
+            pipeline_trigger=pipeline,
+            composition_repo=writer,
+            transaction=transaction,
         )
+        return service, credit, writer, transaction
 
-    async def test_commits_job_assets_and_credit_before_triggering_pipeline(self):
-        service, credit, writer, transaction = self._service(_Pipeline())
+    async def test_deducts_one_use_and_starts_pipeline(self):
+        pipeline = _Pipeline()
+        service, credit, writer, transaction = self._service(pipeline)
 
         result = await service.execute(
             RequestCompositionCommand(
@@ -116,15 +117,13 @@ class RequestCompositionServiceTest(unittest.IsolatedAsyncioTestCase):
             )
         )
 
-        self.assertTrue(result.composition_job_id)
-        self.assertTrue(credit.deducted)
-        self.assertFalse(credit.refunded)
-        self.assertEqual(writer.jobs[-1][1], CompositionStatus.PROCESSING)
         self.assertEqual(credit.deducted_job_id, result.composition_job_id)
+        self.assertIsNone(credit.refunded_job_id)
+        self.assertEqual(writer.job.status, CompositionStatus.PROCESSING)
+        self.assertEqual(len(pipeline.commands), 1)
         self.assertEqual(transaction.commits, 1)
-        self.assertEqual(transaction.rollbacks, 1)
 
-    async def test_refunds_credit_and_marks_job_failed_when_pipeline_trigger_fails(self):
+    async def test_restores_original_use_when_pipeline_start_fails(self):
         service, credit, writer, transaction = self._service(_Pipeline(fail=True))
 
         with self.assertRaisesRegex(RuntimeError, "pipeline unavailable"):
@@ -136,8 +135,6 @@ class RequestCompositionServiceTest(unittest.IsolatedAsyncioTestCase):
                 )
             )
 
-        self.assertTrue(credit.deducted)
-        self.assertTrue(credit.refunded)
-        self.assertEqual(writer.jobs[-1][1], CompositionStatus.FAILED)
-        self.assertEqual(credit.refunded_job_id, writer.jobs[-1][0])
+        self.assertEqual(credit.refunded_job_id, writer.job.id)
+        self.assertEqual(writer.job.status, CompositionStatus.FAILED)
         self.assertEqual(transaction.commits, 2)

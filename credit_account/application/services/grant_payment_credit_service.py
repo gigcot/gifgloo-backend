@@ -33,6 +33,8 @@ class GrantPaymentCreditService(GrantPaymentCreditPort):
             command.amount,
             source_type=source_type,
             source_id=command.payment_id,
+            reason="GIF 합성 5회 이용권 구매",
+            granted_at=command.granted_at,
         )
         await self._credit_account_repo.save(credit_account)
         return GrantPaymentCreditResult(granted=True)

@@ -91,9 +91,13 @@ async def list_payment_products():
             "name": product.name,
             "amount": product.amount,
             "credit_amount": product.credit_amount,
+            "purpose": product.purpose.value,
+            "usage_count": product.usage_count,
+            "validity_days": product.validity_days,
             "currency": product.currency,
         }
         for product in PAYMENT_PRODUCTS.values()
+        if product.available
     ]
 
 
@@ -114,6 +118,7 @@ async def create_payment_checkout(
         "order_id": result.order_id,
         "amount": result.amount,
         "credit_amount": result.credit_amount,
+        "purpose": result.purpose.value,
         "currency": result.currency,
         "status": result.status,
         "order_name": result.order_name,
