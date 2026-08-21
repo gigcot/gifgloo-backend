@@ -44,6 +44,7 @@ class SqlAlchemyAsyncCreditSummaryReader(AsyncCreditSummaryReader):
                 transaction_type=TransactionType(model.transaction_type),
                 source_type=CreditSourceType(model.source_type),
                 source_id=model.source_id,
+                credit_lot_id=model.credit_lot_id,
                 reason=model.reason,
                 balance_after=model.balance_after,
                 created_at=model.created_at,

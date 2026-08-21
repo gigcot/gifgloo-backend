@@ -50,7 +50,9 @@ def _make_async_verify_user_service(db: AsyncSession) -> AsyncVerifyUserService:
 def _make_async_credit_adapter(db: AsyncSession) -> AsyncCreditAdapter:
     return AsyncCreditAdapter(
         AsyncCreditService(
-            user_verification=CreditUserVerificationAdapter(_make_async_verify_user_service(db)),
+            user_verification=CreditUserVerificationAdapter(
+                _make_async_verify_user_service(db)
+            ),
             credit_account_repo=SqlAlchemyAsyncCreditAccountRepository(db),
         )
     )

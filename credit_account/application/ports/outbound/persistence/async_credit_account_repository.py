@@ -1,7 +1,8 @@
 from abc import ABC, abstractmethod
 
-from credit_account.domain.aggregates.credit_account import CreditAccount
+from credit_account.domain.aggregates.credit_account import CreditAccount, CreditTransaction
 from credit_account.domain.value_objects.credit_source_type import CreditSourceType
+from credit_account.domain.value_objects.transaction_type import TransactionType
 
 
 class AsyncCreditAccountRepository(ABC):
@@ -23,4 +24,14 @@ class AsyncCreditAccountRepository(ABC):
         source_type: CreditSourceType,
         source_id: str,
     ) -> bool:
+        pass
+
+    @abstractmethod
+    async def find_transaction_by_source(
+        self,
+        user_id: str,
+        transaction_type: TransactionType,
+        source_type: CreditSourceType,
+        source_id: str,
+    ) -> CreditTransaction | None:
         pass

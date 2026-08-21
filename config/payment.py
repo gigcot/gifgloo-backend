@@ -1,5 +1,3 @@
-import os
-
 from fastapi import Depends
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -25,12 +23,6 @@ from payment.adapter.outbound.persistence.sqlalchemy_async_transaction import (
 from payment.adapter.outbound.persistence.sqlalchemy_payment_inbox import (
     SqlAlchemyPaymentInbox,
 )
-from payment.adapter.outbound.payment_gateway.toss_pay_http_adapter import (
-    TossPayHttpAdapter,
-)
-from payment.adapter.outbound.payment_gateway.portone_http_adapter import (
-    PortOneHttpAdapter,
-)
 from payment.application.services.create_payment_order_service import (
     CreatePaymentOrderService,
 )
@@ -43,28 +35,12 @@ from payment.application.services.process_verified_payment_service import (
 from payment.application.services.handle_toss_pay_callback_service import (
     HandleTossPayCallbackService,
 )
-from config.payment_settings import required_payment_env, required_portone_environment
+from config.payment_settings import required_portone_environment
+from config.payment_gateway import make_portone_gateway, make_toss_pay_gateway
 from user.adapter.outbound.persistence.sqlalchemy_async_user_repository import (
     SqlAlchemyAsyncUserRepository,
 )
 from user.application.services.async_verify_user_service import AsyncVerifyUserService
-
-
-def _get_toss_pay_gateway() -> TossPayHttpAdapter:
-    return TossPayHttpAdapter(
-        api_key=required_payment_env("TOSS_PAY_API_KEY"),
-        result_callback_url=required_payment_env("TOSS_PAY_RESULT_CALLBACK_URL"),
-        return_url=required_payment_env("TOSS_PAY_RETURN_URL"),
-        cancel_url=required_payment_env("TOSS_PAY_CANCEL_URL"),
-        base_url=os.getenv("TOSS_PAY_BASE_URL", "https://pay.toss.im/api/v2"),
-    )
-
-
-def _get_portone_gateway() -> PortOneHttpAdapter:
-    return PortOneHttpAdapter(
-        api_secret=required_payment_env("PORTONE_API_SECRET"),
-        base_url=os.getenv("PORTONE_API_BASE_URL", "https://api.portone.io"),
-    )
 
 
 def get_create_payment_order_service(
@@ -85,7 +61,7 @@ def get_confirm_portone_payment_service(
     payment_repo = SqlAlchemyAsyncPaymentRepository(db)
     transaction = SqlAlchemyAsyncTransaction(db)
     return ConfirmPortOnePaymentService(
-        portone_gateway=_get_portone_gateway(),
+        portone_gateway=make_portone_gateway(),
         process_payment=ProcessVerifiedPaymentService(
             payment_repo=payment_repo,
             inbox=SqlAlchemyPaymentInbox(db),
@@ -122,7 +98,7 @@ def get_handle_toss_pay_callback_service(
     payment_repo = SqlAlchemyAsyncPaymentRepository(db)
     transaction = SqlAlchemyAsyncTransaction(db)
     return HandleTossPayCallbackService(
-        toss_pay_gateway=_get_toss_pay_gateway(),
+        toss_pay_gateway=make_toss_pay_gateway(),
         process_payment=ProcessVerifiedPaymentService(
             payment_repo=payment_repo,
             inbox=SqlAlchemyPaymentInbox(db),

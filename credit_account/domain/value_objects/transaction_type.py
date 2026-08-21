@@ -5,3 +5,4 @@ class TransactionType(Enum):
     CHARGE = "CHARGE"
     DEDUCT = "DEDUCT"
     REFUND = "REFUND"
+    EXPIRATION = "EXPIRATION"

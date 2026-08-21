@@ -24,6 +24,7 @@ class AsyncCreditGrantAdapter(CreditGrantPort):
                 user_id=command.user_id,
                 amount=command.amount,
                 payment_id=command.payment_id,
+                granted_at=command.granted_at,
             )
         )
         return GrantPaymentCreditResult(granted=result.granted)

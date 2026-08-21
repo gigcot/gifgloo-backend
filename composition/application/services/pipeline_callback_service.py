@@ -95,13 +95,17 @@ class PipelineCallbackService:
         COMPOSITION_COMPLETED_TOTAL.inc()
 
     async def fail(self, job_id: str, reason: str) -> None:
-        job = await self._find_job(job_id)
-        if job.status in (CompositionStatus.COMPLETED, CompositionStatus.FAILED):
-            return
-        job.fail(reason)
-        await self._credit.refund(job.user_id, job.id)
-        await self._composition_repo.update(job)
-        await self._transaction.commit()
+        try:
+            job = await self._find_job(job_id)
+            if job.status in (CompositionStatus.COMPLETED, CompositionStatus.FAILED):
+                return
+            await self._credit.refund(job.user_id, job.id)
+            CREDIT_REFUND_TOTAL.inc()
+            job.fail(reason)
+            await self._composition_repo.update(job)
+            await self._transaction.commit()
+        except Exception:
+            await self._transaction.rollback()
+            raise
         PIPELINE_FAIL_TOTAL.inc()
         COMPOSITION_FAILED_TOTAL.inc()
-        CREDIT_REFUND_TOTAL.inc()

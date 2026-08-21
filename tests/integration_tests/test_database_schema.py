@@ -13,7 +13,11 @@ import user.adapter.outbound.persistence.models  # noqa: F401
 from asset.adapter.outbound.models import AssetModel
 from composition.adapter.outbound.persistence.models import CompositionJobModel
 from config.database import SessionLocal, engine
-from credit_account.adapter.outbound.models import CreditAccountModel, CreditTransactionModel
+from credit_account.adapter.outbound.models import (
+    CreditAccountModel,
+    CreditLotModel,
+    CreditTransactionModel,
+)
 from payment.adapter.outbound.persistence.models import PaymentInboxModel, PaymentModel
 from user.adapter.outbound.persistence.models import UserModel
 
@@ -32,6 +36,7 @@ class DatabaseSchemaIntegrationTest(unittest.TestCase):
             "assets",
             "composition_jobs",
             "credit_accounts",
+            "credit_lots",
             "credit_transactions",
             "payment_inbox",
             "payments",
@@ -66,6 +71,7 @@ class DatabaseSchemaIntegrationTest(unittest.TestCase):
         asset_id = f"integration-asset-{uuid4()}"
         job_id = f"integration-job-{uuid4()}"
         transaction_id = f"integration-transaction-{uuid4()}"
+        lot_id = f"integration-lot-{uuid4()}"
         payment_id = f"integration-payment-{uuid4()}"
         order_id = f"integration-order-{uuid4()}"
         event_id = f"integration-event-{uuid4()}"
@@ -78,9 +84,10 @@ class DatabaseSchemaIntegrationTest(unittest.TestCase):
                     user_id=user_id,
                     provider="TOSS_PAY",
                     order_id=order_id,
-                    amount=5000,
+                    amount=6600,
                     currency="KRW",
-                    credit_amount=100,
+                    credit_amount=50,
+                    purpose="COMPOSITION_PASS_PURCHASE",
                     payment_environment="LIVE",
                     provider_payment_id=payment_id,
                     provider_transaction_id=payment_id,
@@ -105,15 +112,27 @@ class DatabaseSchemaIntegrationTest(unittest.TestCase):
                 ),
                 CreditAccountModel(
                     user_id=user_id,
-                    balance=100,
+                    balance=50,
+                ),
+                CreditLotModel(
+                    id=lot_id,
+                    account_user_id=user_id,
+                    source_type="PAYMENT",
+                    source_id=payment_id,
+                    granted_amount=50,
+                    remaining_amount=50,
+                    expires_at=now,
+                    created_at=now,
                 ),
                 CreditTransactionModel(
                     id=transaction_id,
                     account_user_id=user_id,
-                    amount=100,
+                    amount=50,
                     transaction_type="CHARGE",
                     source_type="PAYMENT",
                     source_id=payment_id,
+                    credit_lot_id=lot_id,
+                    balance_after=50,
                     created_at=now,
                 ),
                 PaymentInboxModel(
@@ -154,12 +173,12 @@ class DatabaseSchemaIntegrationTest(unittest.TestCase):
             session.commit()
 
             self.assertEqual(session.get(UserModel, user_id).email, "integration@example.com")
-            self.assertEqual(session.get(CreditAccountModel, user_id).balance, 100)
+            self.assertEqual(session.get(CreditAccountModel, user_id).balance, 50)
             self.assertEqual(
                 session.get(CreditTransactionModel, transaction_id).source_id,
                 payment_id,
             )
-            self.assertEqual(session.get(PaymentModel, payment_id).credit_amount, 100)
+            self.assertEqual(session.get(PaymentModel, payment_id).credit_amount, 50)
             self.assertEqual(
                 session.get(PaymentModel, payment_id).payment_environment,
                 "LIVE",
@@ -171,6 +190,9 @@ class DatabaseSchemaIntegrationTest(unittest.TestCase):
             session.rollback()
             session.query(CreditTransactionModel).filter(
                 CreditTransactionModel.id == transaction_id,
+            ).delete(synchronize_session=False)
+            session.query(CreditLotModel).filter(
+                CreditLotModel.id == lot_id,
             ).delete(synchronize_session=False)
             session.query(PaymentInboxModel).filter(
                 PaymentInboxModel.id == event_id,

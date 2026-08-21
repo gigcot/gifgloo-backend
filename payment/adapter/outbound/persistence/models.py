@@ -22,6 +22,7 @@ class PaymentModel(Base):
     amount = Column(Integer, nullable=False)
     currency = Column(String, nullable=False)
     credit_amount = Column(Integer, nullable=False)
+    purpose = Column(String, nullable=False)
     payment_environment = Column(
         String,
         nullable=False,

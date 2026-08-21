@@ -41,7 +41,11 @@ async def get_credit_balance(
 ):
     user_id = _get_user_id(request)
     result = await service.execute(GetCreditBalanceCommand(user_id))
-    return {"balance": result.balance}
+    return {
+        "balance": result.balance,
+        "remaining_uses": result.remaining_uses,
+        "nearest_expires_at": result.nearest_expires_at,
+    }
 
 # TODO: get_history — DI 연결 후 활성화
 # @router.get("/history")

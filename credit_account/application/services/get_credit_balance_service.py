@@ -21,4 +21,8 @@ class GetCreditBalanceService(GetCreditBalancePort):
 
         credit_account = await self._credit_account_repo.find_balance_by_user_id(command.user_id)
 
-        return GetCreditBalanceResult(credit_account.balance)
+        return GetCreditBalanceResult(
+            balance=credit_account.balance,
+            remaining_uses=credit_account.balance // credit_account.composition_cost,
+            nearest_expires_at=credit_account.nearest_expiration(),
+        )

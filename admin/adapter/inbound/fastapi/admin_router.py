@@ -14,7 +14,7 @@ from admin.application.ports.outbound.domain_bridges.user_admin_lookup_port impo
 from admin.application.services.admin_ops_service import AdminOpsService
 from config.admin import get_user_admin_lookup_port
 from config.database import get_async_db
-from config.payment import _get_toss_pay_gateway
+from config.payment_gateway import make_toss_pay_gateway
 from shared.exceptions import BusinessRuleException, NotFoundException
 
 SECRET_KEY = os.getenv("JWT_SECRET_KEY")
@@ -84,7 +84,7 @@ def get_admin_ops_query(
 def get_admin_ops_service(
     db: AsyncSession = Depends(get_async_db),
 ) -> AdminOpsService:
-    return AdminOpsService(db, _get_toss_pay_gateway())
+    return AdminOpsService(db, make_toss_pay_gateway())
 
 
 @router.get("/me")
