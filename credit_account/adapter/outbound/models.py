@@ -6,6 +6,7 @@ from sqlalchemy import (
     Integer,
     String,
     UniqueConstraint,
+    text,
 )
 from sqlalchemy.orm import relationship
 
@@ -31,6 +32,13 @@ class CreditLotModel(Base):
             name="uq_credit_lots_source",
         ),
         Index("ix_credit_lots_account_expiration", "account_user_id", "expires_at"),
+        Index(
+            "ix_credit_lots_user_payment_history",
+            "account_user_id",
+            "source_type",
+            "created_at",
+            "id",
+        ),
     )
 
     id = Column(String, primary_key=True)
@@ -55,6 +63,15 @@ class CreditTransactionModel(Base):
             name="uq_credit_transactions_type_source",
         ),
         Index("ix_credit_transactions_source", "source_type", "source_id"),
+        Index(
+            "ix_credit_transactions_user_history",
+            "account_user_id",
+            "created_at",
+            "id",
+            postgresql_where=text(
+                "transaction_type IN ('CHARGE', 'DEDUCT', 'REFUND')"
+            ),
+        ),
     )
 
     id = Column(String, primary_key=True)

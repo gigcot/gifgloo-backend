@@ -25,5 +25,9 @@ class AsyncPaymentRepository(ABC):
         pass
 
     @abstractmethod
-    async def find_all_by_user_id(self, user_id: str) -> list[Payment]:
+    async def find_all_by_ids_for_user(
+        self,
+        user_id: str,
+        payment_ids: list[str],
+    ) -> list[Payment]:
         pass

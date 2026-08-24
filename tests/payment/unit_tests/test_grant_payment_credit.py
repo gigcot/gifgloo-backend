@@ -13,6 +13,9 @@ from credit_account.application.services.grant_payment_credit_service import (
 )
 from credit_account.domain.aggregates.credit_account import CreditAccount
 from credit_account.domain.value_objects.credit_source_type import CreditSourceType
+from credit_account.domain.value_objects.available_credit_summary import (
+    AvailableCreditSummary,
+)
 from credit_account.domain.value_objects.transaction_type import TransactionType
 
 
@@ -21,11 +24,20 @@ class FakeCreditAccountRepository:
         self.account = CreditAccount(user_id="user-1", balance=0, transactions=[])
         self.save_count = 0
 
-    async def find_for_update(self, user_id: str):
+    async def find_for_update(
+        self,
+        user_id: str,
+        required_lot_id: str | None = None,
+    ):
         return self.account if self.account.user_id == user_id else None
 
-    async def find_balance_by_user_id(self, user_id: str):
-        return self.account if self.account.user_id == user_id else None
+    async def find_available_summary_by_user_id(self, user_id: str, now: datetime):
+        if self.account.user_id != user_id:
+            return None
+        return AvailableCreditSummary(
+            balance=self.account.available_balance(now),
+            nearest_expires_at=self.account.nearest_expiration(now),
+        )
 
     async def exists_transaction_by_source(self, source_type, source_id):
         return any(
@@ -184,14 +196,23 @@ class CreditLotPolicyTest(unittest.TestCase):
         first.remaining_amount = 20
         account.balance = 70
 
-        account.expire_lots(datetime(2026, 8, 28, tzinfo=timezone.utc))
+        account.deduct(
+            source_type=CreditSourceType.COMPOSITION,
+            source_id="job-after-expiration",
+            now=datetime(2026, 8, 28, tzinfo=timezone.utc),
+        )
 
         self.assertEqual(first.remaining_amount, 0)
-        self.assertEqual(second.remaining_amount, 50)
-        self.assertEqual(account.balance, 50)
-        expiration = account.transactions[-1]
+        self.assertEqual(second.remaining_amount, 40)
+        self.assertEqual(account.balance, 40)
+        expiration = next(
+            transaction
+            for transaction in account.transactions
+            if transaction.transaction_type == TransactionType.EXPIRATION
+        )
         self.assertEqual(expiration.transaction_type, TransactionType.EXPIRATION)
         self.assertEqual(expiration.amount, 20)
+        self.assertEqual(expiration.created_at, first.expires_at)
 
     def test_creates_one_day_compensation_lot_when_original_lot_expired(self):
         account = CreditAccount("user-1", 0, [])
