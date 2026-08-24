@@ -1,6 +1,9 @@
+from datetime import datetime, timezone
+
 from credit_account.application.ports.outbound.persistence.async_credit_account_repository import (
     AsyncCreditAccountRepository,
 )
+from credit_account.domain.aggregates.credit_account import CreditAccount
 from credit_account.application.ports.outbound.async_user_verification_port import (
     AsyncUserVerificationPort,
 )
@@ -19,8 +22,14 @@ class AsyncCreditService:
         self._credit_account_repo = credit_account_repo
 
     async def has_enough_credit(self, user_id: str) -> bool:
-        credit_account = await self._credit_account_repo.find_balance_by_user_id(user_id)
-        return credit_account is not None and credit_account.has_enough()
+        summary = await self._credit_account_repo.find_available_summary_by_user_id(
+            user_id,
+            datetime.now(timezone.utc),
+        )
+        return (
+            summary is not None
+            and summary.balance >= CreditAccount.composition_cost
+        )
 
     async def deduct(self, user_id: str, job_id: str) -> None:
         if not await self._user_verification.is_active_user(user_id):
@@ -39,11 +48,23 @@ class AsyncCreditService:
         credit_account.deduct(
             source_type=CreditSourceType.COMPOSITION,
             source_id=job_id,
+            now=datetime.now(timezone.utc),
         )
         await self._credit_account_repo.save(credit_account)
 
     async def refund(self, user_id: str, job_id: str) -> None:
-        credit_account = await self._credit_account_repo.find_for_update(user_id)
+        deduction = await self._credit_account_repo.find_transaction_by_source(
+            user_id=user_id,
+            transaction_type=TransactionType.DEDUCT,
+            source_type=CreditSourceType.COMPOSITION,
+            source_id=job_id,
+        )
+        if deduction is None or deduction.credit_lot_id is None:
+            raise InvalidStateException("합성 작업의 이용권 차감 이력을 찾을 수 없습니다")
+        credit_account = await self._credit_account_repo.find_for_update(
+            user_id,
+            required_lot_id=deduction.credit_lot_id,
+        )
         if credit_account is None:
             raise NotFoundException("이용권 계정을 찾을 수 없습니다")
         existing_refund = await self._credit_account_repo.find_transaction_by_source(
@@ -54,18 +75,11 @@ class AsyncCreditService:
         )
         if existing_refund is not None:
             return
-        deduction = await self._credit_account_repo.find_transaction_by_source(
-            user_id=user_id,
-            transaction_type=TransactionType.DEDUCT,
-            source_type=CreditSourceType.COMPOSITION,
-            source_id=job_id,
-        )
-        if deduction is None or deduction.credit_lot_id is None:
-            raise InvalidStateException("합성 작업의 이용권 차감 이력을 찾을 수 없습니다")
 
         credit_account.refund(
             original_lot_id=deduction.credit_lot_id,
             source_type=CreditSourceType.COMPOSITION,
             source_id=job_id,
+            now=datetime.now(timezone.utc),
         )
         await self._credit_account_repo.save(credit_account)

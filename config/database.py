@@ -10,6 +10,9 @@ ASYNC_DATABASE_URL = os.environ["ASYNC_DATABASE_URL"]
 DB_POOL_PRE_PING = os.getenv("DB_POOL_PRE_PING", "true").lower() == "true"
 ASYNC_DB_POOL_SIZE = int(os.getenv("ASYNC_DB_POOL_SIZE", "3"))
 ASYNC_DB_MAX_OVERFLOW = int(os.getenv("ASYNC_DB_MAX_OVERFLOW", "2"))
+ASYNC_DB_POOL_TIMEOUT_SECONDS = float(
+    os.getenv("ASYNC_DB_POOL_TIMEOUT_SECONDS", "5")
+)
 
 engine = create_engine(
     DATABASE_URL,
@@ -23,6 +26,7 @@ async_engine = create_async_engine(
     ASYNC_DATABASE_URL,
     pool_size=ASYNC_DB_POOL_SIZE,
     max_overflow=ASYNC_DB_MAX_OVERFLOW,
+    pool_timeout=ASYNC_DB_POOL_TIMEOUT_SECONDS,
     pool_pre_ping=DB_POOL_PRE_PING,
     pool_recycle=1800,
 )

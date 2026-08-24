@@ -1,6 +1,6 @@
-from datetime import datetime, timezone
+from datetime import datetime
 
-from sqlalchemy import select, update
+from sqlalchemy import and_, func, or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from credit_account.adapter.outbound.models import (
@@ -17,6 +17,9 @@ from credit_account.domain.aggregates.credit_account import (
     CreditTransaction,
 )
 from credit_account.domain.value_objects.credit_source_type import CreditSourceType
+from credit_account.domain.value_objects.available_credit_summary import (
+    AvailableCreditSummary,
+)
 from credit_account.domain.value_objects.transaction_type import TransactionType
 
 
@@ -72,7 +75,11 @@ class SqlAlchemyAsyncCreditAccountRepository(AsyncCreditAccountRepository):
         await self._session.flush()
         account.mark_pending_changes_persisted()
 
-    async def find_for_update(self, user_id: str) -> CreditAccount | None:
+    async def find_for_update(
+        self,
+        user_id: str,
+        required_lot_id: str | None = None,
+    ) -> CreditAccount | None:
         account_statement = (
             select(CreditAccountModel)
             .where(CreditAccountModel.user_id == user_id)
@@ -83,9 +90,20 @@ class SqlAlchemyAsyncCreditAccountRepository(AsyncCreditAccountRepository):
         ).scalar_one_or_none()
         if account_model is None:
             return None
+        required_lot_condition = (
+            CreditLotModel.id == required_lot_id
+            if required_lot_id is not None
+            else False
+        )
         lots_statement = (
             select(CreditLotModel)
-            .where(CreditLotModel.account_user_id == user_id)
+            .where(
+                CreditLotModel.account_user_id == user_id,
+                or_(
+                    CreditLotModel.remaining_amount > 0,
+                    required_lot_condition,
+                ),
+            )
             .order_by(CreditLotModel.expires_at, CreditLotModel.created_at)
             .with_for_update()
         )
@@ -97,27 +115,34 @@ class SqlAlchemyAsyncCreditAccountRepository(AsyncCreditAccountRepository):
             lots=[_lot_to_domain(model) for model in lot_models],
         )
 
-    async def find_balance_by_user_id(self, user_id: str) -> CreditAccount | None:
-        account_model = await self._session.get(CreditAccountModel, user_id)
-        if account_model is None:
-            return None
-        current = datetime.now(timezone.utc)
+    async def find_available_summary_by_user_id(
+        self,
+        user_id: str,
+        now: datetime,
+    ) -> AvailableCreditSummary | None:
         statement = (
-            select(CreditLotModel)
-            .where(
-                CreditLotModel.account_user_id == user_id,
-                CreditLotModel.remaining_amount > 0,
-                CreditLotModel.expires_at > current,
+            select(
+                func.coalesce(func.sum(CreditLotModel.remaining_amount), 0),
+                func.min(CreditLotModel.expires_at),
             )
-            .order_by(CreditLotModel.expires_at, CreditLotModel.created_at)
+            .select_from(CreditAccountModel)
+            .outerjoin(
+                CreditLotModel,
+                and_(
+                    CreditLotModel.account_user_id == CreditAccountModel.user_id,
+                    CreditLotModel.remaining_amount > 0,
+                    CreditLotModel.expires_at > now,
+                ),
+            )
+            .where(CreditAccountModel.user_id == user_id)
+            .group_by(CreditAccountModel.user_id)
         )
-        models = (await self._session.scalars(statement)).all()
-        lots = [_lot_to_domain(model) for model in models]
-        return CreditAccount(
-            user_id=user_id,
-            balance=sum(lot.remaining_amount for lot in lots),
-            transactions=[],
-            lots=lots,
+        row = (await self._session.execute(statement)).one_or_none()
+        if row is None:
+            return None
+        return AvailableCreditSummary(
+            balance=row[0],
+            nearest_expires_at=row[1],
         )
 
     async def exists_transaction_by_source(
@@ -146,6 +171,69 @@ class SqlAlchemyAsyncCreditAccountRepository(AsyncCreditAccountRepository):
         )
         model = (await self._session.execute(statement)).scalar_one_or_none()
         return _transaction_to_domain(model) if model else None
+
+    async def find_lot_page_by_user_id(
+        self,
+        user_id: str,
+        source_type: CreditSourceType,
+        limit: int,
+        cursor_created_at: datetime | None,
+        cursor_id: str | None,
+    ) -> list[CreditLot]:
+        statement = select(CreditLotModel).where(
+            CreditLotModel.account_user_id == user_id,
+            CreditLotModel.source_type == source_type.value,
+        )
+        if cursor_created_at is not None and cursor_id is not None:
+            statement = statement.where(
+                or_(
+                    CreditLotModel.created_at < cursor_created_at,
+                    and_(
+                        CreditLotModel.created_at == cursor_created_at,
+                        CreditLotModel.id < cursor_id,
+                    ),
+                )
+            )
+        statement = statement.order_by(
+            CreditLotModel.created_at.desc(),
+            CreditLotModel.id.desc(),
+        ).limit(limit)
+        models = (await self._session.scalars(statement)).all()
+        return [_lot_to_domain(model) for model in models]
+
+    async def find_transaction_page_by_user_id(
+        self,
+        user_id: str,
+        transaction_types: frozenset[TransactionType],
+        limit: int,
+        cursor_created_at: datetime | None,
+        cursor_id: str | None,
+    ) -> list[CreditTransaction]:
+        statement = select(CreditTransactionModel).where(
+            CreditTransactionModel.account_user_id == user_id,
+            CreditTransactionModel.transaction_type.in_(
+                tuple(
+                    transaction_type.value
+                    for transaction_type in transaction_types
+                )
+            ),
+        )
+        if cursor_created_at is not None and cursor_id is not None:
+            statement = statement.where(
+                or_(
+                    CreditTransactionModel.created_at < cursor_created_at,
+                    and_(
+                        CreditTransactionModel.created_at == cursor_created_at,
+                        CreditTransactionModel.id < cursor_id,
+                    ),
+                )
+            )
+        statement = statement.order_by(
+            CreditTransactionModel.created_at.desc(),
+            CreditTransactionModel.id.desc(),
+        ).limit(limit)
+        models = (await self._session.scalars(statement)).all()
+        return [_transaction_to_domain(model) for model in models]
 
     @staticmethod
     def _lot_to_model(lot: CreditLot, user_id: str) -> CreditLotModel:

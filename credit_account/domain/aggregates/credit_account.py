@@ -21,6 +21,9 @@ class CreditLot:
     def is_expired(self, now: datetime) -> bool:
         return self.expires_at <= now
 
+    def available_amount(self, now: datetime) -> int:
+        return 0 if self.is_expired(now) else self.remaining_amount
+
 
 @dataclass
 class CreditTransaction:
@@ -75,28 +78,23 @@ class CreditAccount:
 
     def available_balance(self, now: datetime | None = None) -> int:
         current = now or datetime.now(timezone.utc)
-        return sum(
-            lot.remaining_amount
-            for lot in self.lots
-            if not lot.is_expired(current)
-        )
+        return sum(lot.available_amount(current) for lot in self.lots)
 
     def nearest_expiration(self, now: datetime | None = None) -> datetime | None:
         current = now or datetime.now(timezone.utc)
         expirations = [
             lot.expires_at
             for lot in self.lots
-            if lot.remaining_amount > 0 and not lot.is_expired(current)
+            if lot.available_amount(current) > 0
         ]
         return min(expirations) if expirations else None
 
     def has_enough(self, now: datetime | None = None) -> bool:
         return self.available_balance(now) >= self.composition_cost
 
-    def expire_lots(self, now: datetime | None = None) -> None:
-        current = now or datetime.now(timezone.utc)
+    def _expire_lots(self, now: datetime) -> None:
         for lot in self.lots:
-            if lot.remaining_amount == 0 or not lot.is_expired(current):
+            if lot.remaining_amount == 0 or not lot.is_expired(now):
                 continue
             expired_amount = lot.remaining_amount
             lot.remaining_amount = 0
@@ -109,7 +107,7 @@ class CreditAccount:
                 source_id=lot.id,
                 credit_lot_id=lot.id,
                 reason="이용권 사용기한 만료",
-                created_at=current,
+                created_at=lot.expires_at,
             )
 
     def deduct(
@@ -120,7 +118,7 @@ class CreditAccount:
     ) -> None:
         current = now or datetime.now(timezone.utc)
         self._validate_source(source_type, source_id)
-        self.expire_lots(current)
+        self._expire_lots(current)
         lot = next(
             (
                 candidate
@@ -154,7 +152,7 @@ class CreditAccount:
     ) -> None:
         current = now or datetime.now(timezone.utc)
         self._validate_source(source_type, source_id)
-        self.expire_lots(current)
+        self._expire_lots(current)
         original_lot = next(
             (lot for lot in self.lots if lot.id == original_lot_id),
             None,
@@ -208,8 +206,9 @@ class CreditAccount:
         if amount <= 0 or amount % self.composition_cost != 0:
             raise BusinessRuleException("이용권 지급량은 합성 비용의 양의 배수여야 합니다")
         self._validate_source(source_type, source_id)
-        self.expire_lots()
-        created_at = granted_at or datetime.now(timezone.utc)
+        current = datetime.now(timezone.utc)
+        self._expire_lots(current)
+        created_at = granted_at or current
         expiration = expires_at or (
             created_at + timedelta(days=CreditPolicy.PASS_VALIDITY_DAYS)
         )

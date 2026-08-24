@@ -108,11 +108,16 @@ class SqlAlchemyAsyncPaymentRepository(AsyncPaymentRepository):
         model = (await self._session.execute(statement)).scalar_one_or_none()
         return _to_domain(model) if model else None
 
-    async def find_all_by_user_id(self, user_id: str) -> list[Payment]:
-        statement = (
-            select(PaymentModel)
-            .where(PaymentModel.user_id == user_id)
-            .order_by(PaymentModel.created_at.desc())
+    async def find_all_by_ids_for_user(
+        self,
+        user_id: str,
+        payment_ids: list[str],
+    ) -> list[Payment]:
+        if not payment_ids:
+            return []
+        statement = select(PaymentModel).where(
+            PaymentModel.user_id == user_id,
+            PaymentModel.id.in_(payment_ids),
         )
         models = (await self._session.scalars(statement)).all()
         return [_to_domain(model) for model in models]

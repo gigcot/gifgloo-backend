@@ -1,6 +1,7 @@
+import asyncio
 import os
 import unittest
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from uuid import uuid4
 
 from sqlalchemy import inspect
@@ -12,11 +13,14 @@ import payment.adapter.outbound.persistence.models  # noqa: F401
 import user.adapter.outbound.persistence.models  # noqa: F401
 from asset.adapter.outbound.models import AssetModel
 from composition.adapter.outbound.persistence.models import CompositionJobModel
-from config.database import SessionLocal, engine
+from config.database import AsyncSessionLocal, SessionLocal, engine
 from credit_account.adapter.outbound.models import (
     CreditAccountModel,
     CreditLotModel,
     CreditTransactionModel,
+)
+from credit_account.adapter.outbound.sqlalchemy_async_credit_account_repository import (
+    SqlAlchemyAsyncCreditAccountRepository,
 )
 from payment.adapter.outbound.persistence.models import PaymentInboxModel, PaymentModel
 from user.adapter.outbound.persistence.models import UserModel
@@ -64,6 +68,105 @@ class DatabaseSchemaIntegrationTest(unittest.TestCase):
 
         self.assertIn("payment_environment", columns)
         self.assertFalse(columns["payment_environment"]["nullable"])
+
+    def test_credit_history_indexes_exist(self):
+        lot_indexes = {
+            index["name"] for index in inspect(engine).get_indexes("credit_lots")
+        }
+        transaction_indexes = {
+            index["name"]
+            for index in inspect(engine).get_indexes("credit_transactions")
+        }
+
+        self.assertIn("ix_credit_lots_user_payment_history", lot_indexes)
+        self.assertIn("ix_credit_transactions_user_history", transaction_indexes)
+
+    def test_available_credit_summary_excludes_expired_and_empty_lots(self):
+        observed_at = datetime.now(timezone.utc)
+        user_id = f"integration-credit-summary-user-{uuid4()}"
+        active_lot_id = f"integration-active-lot-{uuid4()}"
+        expired_lot_id = f"integration-expired-lot-{uuid4()}"
+        empty_lot_id = f"integration-empty-lot-{uuid4()}"
+        session = SessionLocal()
+
+        try:
+            session.add(
+                UserModel(
+                    id=user_id,
+                    provider="test",
+                    provider_id=user_id,
+                    email=f"{user_id}@example.com",
+                    role="USER",
+                    status="ACTIVE",
+                    created_at=observed_at,
+                )
+            )
+            session.add(
+                CreditAccountModel(
+                    user_id=user_id,
+                    balance=70,
+                )
+            )
+            session.add_all([
+                CreditLotModel(
+                    id=active_lot_id,
+                    account_user_id=user_id,
+                    granted_amount=30,
+                    remaining_amount=30,
+                    expires_at=observed_at + timedelta(days=7),
+                    created_at=observed_at,
+                ),
+                CreditLotModel(
+                    id=expired_lot_id,
+                    account_user_id=user_id,
+                    granted_amount=40,
+                    remaining_amount=40,
+                    expires_at=observed_at,
+                    created_at=observed_at,
+                ),
+                CreditLotModel(
+                    id=empty_lot_id,
+                    account_user_id=user_id,
+                    granted_amount=20,
+                    remaining_amount=0,
+                    expires_at=observed_at + timedelta(days=1),
+                    created_at=observed_at,
+                ),
+            ])
+            session.commit()
+
+            summary = asyncio.run(
+                self._find_available_credit_summary(user_id, observed_at)
+            )
+
+            self.assertIsNotNone(summary)
+            self.assertEqual(summary.balance, 30)
+            self.assertEqual(
+                summary.nearest_expires_at,
+                observed_at + timedelta(days=7),
+            )
+        finally:
+            session.rollback()
+            session.query(CreditLotModel).filter(
+                CreditLotModel.account_user_id == user_id,
+            ).delete(synchronize_session=False)
+            session.query(CreditAccountModel).filter(
+                CreditAccountModel.user_id == user_id,
+            ).delete(synchronize_session=False)
+            session.query(UserModel).filter(
+                UserModel.id == user_id,
+            ).delete(synchronize_session=False)
+            session.commit()
+            session.close()
+
+    @staticmethod
+    async def _find_available_credit_summary(user_id, observed_at):
+        async with AsyncSessionLocal() as session:
+            repository = SqlAlchemyAsyncCreditAccountRepository(session)
+            return await repository.find_available_summary_by_user_id(
+                user_id,
+                observed_at,
+            )
 
     def test_can_persist_core_records(self):
         now = datetime.now(timezone.utc)
