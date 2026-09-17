@@ -160,23 +160,24 @@ class CreditLotPolicyTest(unittest.TestCase):
 
     def test_deducts_from_earliest_expiring_lot(self):
         account = CreditAccount("user-1", 0, [])
+        now = datetime.now(timezone.utc)
         first = account.charge(
             50,
             source_type=CreditSourceType.PAYMENT,
             source_id="payment-1",
-            granted_at=datetime(2026, 8, 20, tzinfo=timezone.utc),
+            granted_at=now - timedelta(days=4),
         )
         second = account.charge(
             50,
             source_type=CreditSourceType.PAYMENT,
             source_id="payment-2",
-            granted_at=datetime(2026, 8, 23, tzinfo=timezone.utc),
+            granted_at=now - timedelta(days=1),
         )
 
         account.deduct(
             source_type=CreditSourceType.COMPOSITION,
             source_id="job-1",
-            now=datetime(2026, 8, 24, tzinfo=timezone.utc),
+            now=now,
         )
 
         self.assertEqual(first.remaining_amount, 40)
@@ -185,13 +186,14 @@ class CreditLotPolicyTest(unittest.TestCase):
 
     def test_expires_only_remaining_amount_from_expired_lot(self):
         account = CreditAccount("user-1", 0, [])
+        now = datetime.now(timezone.utc)
         first = account.charge(
             50,
-            granted_at=datetime(2026, 8, 20, tzinfo=timezone.utc),
+            granted_at=now - timedelta(days=6),
         )
         second = account.charge(
             50,
-            granted_at=datetime(2026, 8, 23, tzinfo=timezone.utc),
+            granted_at=now - timedelta(days=3),
         )
         first.remaining_amount = 20
         account.balance = 70
@@ -199,7 +201,7 @@ class CreditLotPolicyTest(unittest.TestCase):
         account.deduct(
             source_type=CreditSourceType.COMPOSITION,
             source_id="job-after-expiration",
-            now=datetime(2026, 8, 28, tzinfo=timezone.utc),
+            now=now + timedelta(days=2),
         )
 
         self.assertEqual(first.remaining_amount, 0)

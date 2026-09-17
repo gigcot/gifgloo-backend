@@ -142,6 +142,7 @@ jobs:
       - name: Run unit tests
         run: |
           python -m unittest discover -s credit_account/unit_tests -p 'test_*.py'
+          python -m unittest discover -s user/unit_tests -p 'test_*.py'
           python -m unittest discover -s tests/composition/unit_tests -p 'test_*.py'
           python -m unittest discover -s tests/payment/unit_tests -p 'test_*.py'
 
