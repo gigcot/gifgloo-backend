@@ -35,7 +35,15 @@ class SocialLoginService(SocialLoginPort):
         if is_new_user:
             email = Email(social_info.email) if social_info.email else None
             user = User(social_account=social_account, email=email)
+            user.signup_consent = command.signup_consent
             self._user_repo.save(user)
             self._credit_account_init.init_account(user.id)
+        elif (
+            user.signup_consent is None
+            or user.signup_consent.terms_version != command.signup_consent.terms_version
+            or user.signup_consent.privacy_version != command.signup_consent.privacy_version
+        ):
+            user.signup_consent = command.signup_consent
+            self._user_repo.save(user)
 
         return SocialLoginResult(user_id=user.id, is_new_user=is_new_user)
