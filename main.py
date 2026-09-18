@@ -7,7 +7,6 @@ from fastapi.middleware.cors import CORSMiddleware
 from dotenv import load_dotenv
 load_dotenv(".env")
 
-from config.database import get_db
 from config.payment_settings import validate_payment_config
 from shared.fastapi_error_handler import register_error_handlers
 from shared.metrics import (
@@ -25,10 +24,6 @@ import admin.adapter.outbound.persistence.models  # noqa: F401
 
 from composition.adapter.inbound.fastapi.composition_router import router as composition_router
 from composition.adapter.inbound.fastapi.composition_internal_router import router as composition_internal_router
-from composition.adapter.outbound.aws.lambda_pipeline_trigger_adapter import LambdaPipelineTriggerAdapter
-from composition.adapter.outbound.persistence.sqlalchemy_composition_repository import SqlAlchemyCompositionRepository
-from composition.application.ports.outbound.aws.pipeline_trigger_port import PipelineTriggerCommand
-from composition.domain.value_objects.composition_policy import MAX_FRAMES
 from user.adapter.inbound.fastapi.oauth2 import router as oauth_router
 from user.adapter.inbound.fastapi.user_router import router as user_router
 from asset.adapter.inbound.fastapi.asset_router import router as asset_router
@@ -37,34 +32,11 @@ from payment.adapter.inbound.fastapi.payment_router import router as payment_rou
 from admin.adapter.inbound.fastapi.admin_router import router as admin_router
 
 
-async def _recover_processing_jobs() -> None:
-    db = next(get_db())
-    try:
-        repo = SqlAlchemyCompositionRepository(db)
-        trigger = LambdaPipelineTriggerAdapter()
-        for job in repo.find_all_processing():
-            await trigger.trigger(
-                PipelineTriggerCommand(
-                    job_id=job.id,
-                    gif_url=job.gif_url,
-                    target_key=f"compositions/{job.id}/target.png",
-                    user_id=job.user_id,
-                    max_frames=MAX_FRAMES,
-                    resume_from=job.stage.value if job.stage else None,
-                    durations_ms=job.durations_ms,
-                    spec=job.spec,
-                )
-            )
-    finally:
-        db.close()
-
-
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     validate_payment_config()
     runtime_metrics_task = asyncio.create_task(monitor_runtime_metrics())
     try:
-        await _recover_processing_jobs()
         yield
     finally:
         runtime_metrics_task.cancel()

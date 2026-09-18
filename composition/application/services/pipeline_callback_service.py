@@ -1,8 +1,10 @@
 from typing import Optional
+from datetime import datetime, timezone
 
 from composition.application.ports.outbound.persistence.async_composition_repository import (
     AsyncCompositionRepository,
 )
+from composition.application.ports.outbound.persistence.composition_gate_repository import CompositionGateRepository
 from composition.application.ports.outbound.persistence.async_transaction import AsyncTransaction
 from composition.application.ports.outbound.domain_bridges.asset_save_port import AssetSaveCommand, AssetSavePort
 from composition.application.ports.outbound.aws.storage_port import StoragePort
@@ -28,6 +30,7 @@ class PipelineCallbackService:
     def __init__(
         self,
         composition_repo: AsyncCompositionRepository,
+        gate_repo: CompositionGateRepository,
         asset_save: AssetSavePort,
         storage: StoragePort,
         credit: CreditPort,
@@ -35,6 +38,7 @@ class PipelineCallbackService:
         transaction: AsyncTransaction,
     ):
         self._composition_repo = composition_repo
+        self._gate_repo = gate_repo
         self._asset_save = asset_save
         self._storage = storage
         self._credit = credit
@@ -47,13 +51,34 @@ class PipelineCallbackService:
             raise NotFoundException(f"합성 작업을 찾을 수 없습니다: {job_id}")
         return job
 
+    async def reconcile_expired(self) -> None:
+        now = datetime.now(timezone.utc)
+        if await self._gate_repo.find_expired_job_id(now) is None:
+            return
+        gate = await self._gate_repo.find_for_update()
+        if gate.active_job_id is None or gate.lease_until > now:
+            return
+        job = await self._composition_repo.find_for_update(gate.active_job_id)
+        if job is not None and job.status == CompositionStatus.PROCESSING:
+            await self._credit.refund(job.user_id, job.id)
+            CREDIT_REFUND_TOTAL.inc()
+            job.fail("합성 작업 응답이 없어 종료되었습니다")
+            await self._composition_repo.update(job)
+            COMPOSITION_FAILED_TOTAL.inc()
+        gate.release(gate.active_job_id)
+        await self._gate_repo.update(gate)
+        await self._transaction.commit()
+
     async def checkpoint(
         self,
         job_id: str,
+        run_id: str,
         stage: CompositionStage,
         durations_ms: Optional[list[int]] = None,
         spec: Optional[dict] = None,
     ) -> None:
+        gate = await self._gate_repo.find_for_update()
+        gate.ensure_run(job_id, run_id, datetime.now(timezone.utc))
         job = await self._find_job(job_id)
         if job.status in (CompositionStatus.COMPLETED, CompositionStatus.FAILED):
             return
@@ -72,7 +97,21 @@ class PipelineCallbackService:
         await self._transaction.commit()
         PIPELINE_CHECKPOINT_TOTAL.labels(stage=stage.value).inc()
 
-    async def complete(self, job_id: str, draft_key: str, result_key: str) -> None:
+    async def start(self, job_id: str, run_id: str) -> None:
+        gate = await self._gate_repo.find_for_update()
+        gate.claim(job_id, run_id, datetime.now(timezone.utc))
+        await self._gate_repo.update(gate)
+        await self._transaction.commit()
+
+    async def record_edit(self, job_id: str, run_id: str, elapsed_seconds: float = 0) -> None:
+        gate = await self._gate_repo.find_for_update()
+        gate.record_edit(job_id, run_id, datetime.now(timezone.utc), elapsed_seconds)
+        await self._gate_repo.update(gate)
+        await self._transaction.commit()
+
+    async def complete(self, job_id: str, run_id: str, draft_key: str, result_key: str) -> None:
+        gate = await self._gate_repo.find_for_update()
+        gate.ensure_run(job_id, run_id, datetime.now(timezone.utc))
         job = await self._find_job(job_id)
         if job.status in (CompositionStatus.COMPLETED, CompositionStatus.FAILED):
             return
@@ -90,12 +129,16 @@ class PipelineCallbackService:
             result_asset_id=result_asset_id,
         )
         await self._composition_repo.update(job)
+        gate.release(job_id)
+        await self._gate_repo.update(gate)
         await self._transaction.commit()
         PIPELINE_COMPLETE_TOTAL.inc()
         COMPOSITION_COMPLETED_TOTAL.inc()
 
-    async def fail(self, job_id: str, reason: str) -> None:
+    async def fail(self, job_id: str, run_id: str, reason: str) -> None:
         try:
+            gate = await self._gate_repo.find_for_update()
+            gate.ensure_run(job_id, run_id, datetime.now(timezone.utc))
             job = await self._find_job(job_id)
             if job.status in (CompositionStatus.COMPLETED, CompositionStatus.FAILED):
                 return
@@ -103,6 +146,8 @@ class PipelineCallbackService:
             CREDIT_REFUND_TOTAL.inc()
             job.fail(reason)
             await self._composition_repo.update(job)
+            gate.release(job_id)
+            await self._gate_repo.update(gate)
             await self._transaction.commit()
         except Exception:
             await self._transaction.rollback()

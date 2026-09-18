@@ -1,3 +1,5 @@
+from datetime import datetime, timezone
+
 from composition.application.ports.inbound.request_composition import (
     RequestCompositionCommand,
     RequestCompositionPort,
@@ -23,8 +25,10 @@ from composition.application.ports.outbound.domain_bridges.user_verification_por
 from composition.application.ports.outbound.persistence.async_composition_repository import (
     AsyncCompositionRepository,
 )
+from composition.application.ports.outbound.persistence.composition_gate_repository import CompositionGateRepository
 from composition.application.ports.outbound.persistence.async_transaction import AsyncTransaction
 from composition.domain.aggregates.composition_job import CompositionJob
+from composition.domain.value_objects.composition_status import CompositionStatus
 from composition.domain.value_objects.composition_policy import ALLOWED_IMAGE_SIGNATURES, MAX_FRAMES
 from shared.asset_category import AssetCategory
 from shared.exceptions import (
@@ -37,6 +41,7 @@ from shared.exceptions import (
 )
 from shared.metrics import (
     COMPOSITION_CREATED_TOTAL,
+    COMPOSITION_FAILED_TOTAL,
     CREDIT_DEDUCT_TOTAL,
     CREDIT_REFUND_TOTAL,
 )
@@ -59,6 +64,7 @@ class RequestCompositionService(RequestCompositionPort):
         asset_save: AssetSavePort,
         pipeline_trigger: PipelineTriggerPort,
         composition_repo: AsyncCompositionRepository,
+        gate_repo: CompositionGateRepository,
         transaction: AsyncTransaction,
     ):
         self._user_verification = user_verification
@@ -68,6 +74,7 @@ class RequestCompositionService(RequestCompositionPort):
         self._asset_save = asset_save
         self._pipeline_trigger = pipeline_trigger
         self._composition_repo = composition_repo
+        self._gate_repo = gate_repo
         self._transaction = transaction
 
     async def execute(self, command: RequestCompositionCommand) -> RequestCompositionResult:
@@ -95,16 +102,29 @@ class RequestCompositionService(RequestCompositionPort):
 
         job = CompositionJob(user_id=command.user_id)
         job.gif_url = command.gif_url
-        target_key = await self._storage.upload(
-            job.id,
-            StorageCategory.TARGET,
-            command.target_bytes,
-        )
-        target_url = self._storage.public_url_for(target_key)
         job.source_gif_url = command.gif_url
-        job.target_url = target_url
 
         try:
+            gate = await self._gate_repo.find_for_update()
+            now = datetime.now(timezone.utc)
+            if gate.active_job_id is not None and gate.lease_until <= now:
+                stale_job = await self._composition_repo.find_for_update(gate.active_job_id)
+                if stale_job is not None and stale_job.status == CompositionStatus.PROCESSING:
+                    await self._credit.refund(stale_job.user_id, stale_job.id)
+                    CREDIT_REFUND_TOTAL.inc()
+                    stale_job.fail("합성 작업 응답이 없어 종료되었습니다")
+                    await self._composition_repo.update(stale_job)
+                    COMPOSITION_FAILED_TOTAL.inc()
+                gate.release(gate.active_job_id)
+            gate.reserve(job.id, now)
+            await self._gate_repo.update(gate)
+            target_key = await self._storage.upload(
+                job.id,
+                StorageCategory.TARGET,
+                command.target_bytes,
+            )
+            target_url = self._storage.public_url_for(target_key)
+            job.target_url = target_url
             job.source_gif_asset_id = await self._asset_save.save(
                 AssetSaveCommand(
                     user_id=command.user_id,
@@ -141,6 +161,7 @@ class RequestCompositionService(RequestCompositionPort):
             )
         except Exception as exc:
             try:
+                gate = await self._gate_repo.find_for_update()
                 failed_job = await self._composition_repo.find_for_update(job.id)
                 if failed_job is None:
                     raise NotFoundException("합성 작업을 찾을 수 없습니다") from exc
@@ -148,6 +169,8 @@ class RequestCompositionService(RequestCompositionPort):
                 CREDIT_REFUND_TOTAL.inc()
                 failed_job.fail(str(exc))
                 await self._composition_repo.update(failed_job)
+                gate.release(job.id)
+                await self._gate_repo.update(gate)
                 await self._transaction.commit()
             except Exception:
                 await self._transaction.rollback()

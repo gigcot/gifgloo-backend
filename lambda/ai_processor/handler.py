@@ -7,8 +7,10 @@ import base64
 import io
 import json
 import os
+import time
 import urllib.request
 from concurrent.futures import ThreadPoolExecutor
+from threading import Lock
 
 import boto3
 from openai import OpenAI
@@ -106,21 +108,30 @@ def _ec2_post(callback_url: str, path: str, data: dict) -> None:
         resp.read()
 
 
-def _checkpoint(callback_url: str, job_id: str, stage: str, **kwargs) -> None:
-    _ec2_post(callback_url, f"/compositions/{job_id}/checkpoint", {"stage": stage, **kwargs})
+def _checkpoint(callback_url: str, job_id: str, run_id: str, stage: str, **kwargs) -> None:
+    _ec2_post(callback_url, f"/compositions/{job_id}/checkpoint", {"run_id": run_id, "stage": stage, **kwargs})
 
 
-def _complete(callback_url: str, job_id: str, draft_key: str, result_key: str) -> None:
+def _record_edit(callback_url: str, job_id: str, run_id: str, elapsed_seconds: float = 0) -> None:
+    _ec2_post(callback_url, f"/compositions/{job_id}/edit-started", {"run_id": run_id, "elapsed_seconds": elapsed_seconds})
+
+
+def _complete(callback_url: str, job_id: str, run_id: str, draft_key: str, result_key: str) -> None:
     try:
-        _ec2_post(callback_url, f"/compositions/{job_id}/complete", {"draft_key": draft_key, "result_key": result_key})
+        _ec2_post(callback_url, f"/compositions/{job_id}/complete", {"run_id": run_id, "draft_key": draft_key, "result_key": result_key})
     except urllib.request.HTTPError as e:
         if e.code == 409:
             return
         raise
 
 
-def _fail(callback_url: str, job_id: str, reason: str) -> None:
-    _ec2_post(callback_url, f"/compositions/{job_id}/fail", {"reason": reason})
+def _fail(callback_url: str, job_id: str, run_id: str, reason: str) -> None:
+    try:
+        _ec2_post(callback_url, f"/compositions/{job_id}/fail", {"run_id": run_id, "reason": reason})
+    except urllib.request.HTTPError as e:
+        if e.code == 409:
+            return
+        raise
 
 
 # ── GIF 프로세서 Lambda 호출 ──────────────────────────────────
@@ -279,7 +290,7 @@ def analyze(frame_keys: list[str], target_key: str) -> dict:
     return json.loads(response.choices[0].message.content)
 
 
-def generate_draft(target_key: str, ref_frame_key: str | None, spec: dict, draft_key: str) -> None:
+def generate_draft(target_key: str, ref_frame_key: str | None, spec: dict, draft_key: str, callback_url: str, job_id: str, run_id: str) -> float:
     r2 = _r2_client()
 
 
@@ -289,7 +300,9 @@ def generate_draft(target_key: str, ref_frame_key: str | None, spec: dict, draft
         images.append(("base_frame.png", io.BytesIO(_download(r2, ref_frame_key)), "image/png"))
     images.append(("target.png", io.BytesIO(_download(r2, target_key)), "image/png"))
 
-    response = openai_client.images.edit(
+    _record_edit(callback_url, job_id, run_id)
+    draft_started_at = time.monotonic()
+    response = openai_client.with_options(max_retries=0).images.edit(
         model=IMAGE_MODEL,
         image=images,
         prompt=prompt,
@@ -299,16 +312,18 @@ def generate_draft(target_key: str, ref_frame_key: str | None, spec: dict, draft
         output_format="png",
     )
     _upload_png(r2, draft_key, base64.b64decode(response.data[0].b64_json))
+    return draft_started_at
 
 
-def _composite_one(r2, openai_client, frame_key: str, draft_key: str, spec: dict, frame_idx: int, job_id: str) -> str:
+def _composite_one(r2, openai_client, frame_data: bytes, draft_data: bytes, spec: dict, frame_idx: int, job_id: str, mark_edit_started) -> str:
     output_key = _composited_key(job_id, frame_idx)
     prompt = _build_frame_prompt(spec, frame_idx)
     images = [
-        ("frame.png", io.BytesIO(_download(r2, frame_key)), "image/png"),
-        ("draft.png", io.BytesIO(_download(r2, draft_key)), "image/png"),
+        ("frame.png", io.BytesIO(frame_data), "image/png"),
+        ("draft.png", io.BytesIO(draft_data), "image/png"),
     ]
-    response = openai_client.images.edit(
+    mark_edit_started()
+    response = openai_client.with_options(max_retries=0).images.edit(
         model=IMAGE_MODEL,
         image=images,
         prompt=prompt,
@@ -320,23 +335,37 @@ def _composite_one(r2, openai_client, frame_key: str, draft_key: str, spec: dict
     return output_key
 
 
-def composite_frames(job_id: str, frame_keys: list[str], draft_key: str, spec: dict) -> dict:
+def composite_frames(job_id: str, run_id: str, callback_url: str, frame_keys: list[str], draft_key: str, spec: dict) -> dict:
     r2 = _r2_client()
+    draft_data = _download(r2, draft_key)
+    frames = [_download(r2, frame_key) for frame_key in frame_keys]
+    _record_edit(callback_url, job_id, run_id)
 
+    last_edit_started_at = None
+    edit_lock = Lock()
 
-    with ThreadPoolExecutor(max_workers=len(frame_keys)) as executor:
-        futures = [
-            executor.submit(_composite_one, r2, openai_client, fk, draft_key, spec, i, job_id)
-            for i, fk in enumerate(frame_keys)
-        ]
-        composited_keys = [f.result() for f in futures]
+    def mark_edit_started() -> None:
+        nonlocal last_edit_started_at
+        with edit_lock:
+            last_edit_started_at = time.monotonic()
+
+    try:
+        with ThreadPoolExecutor(max_workers=len(frame_keys)) as executor:
+            futures = [
+                executor.submit(_composite_one, r2, openai_client, frame_data, draft_data, spec, i, job_id, mark_edit_started)
+                for i, frame_data in enumerate(frames)
+            ]
+            composited_keys = [f.result() for f in futures]
+    finally:
+        if last_edit_started_at is not None:
+            _record_edit(callback_url, job_id, run_id, time.monotonic() - last_edit_started_at)
 
     return {"composited_keys": composited_keys}
 
 
 # ── 파이프라인 ────────────────────────────────────────────────
 
-def run_pipeline(event: dict) -> None:
+def run_pipeline(event: dict, run_id: str) -> None:
     job_id = event["job_id"]
     gif_url = event["gif_url"]
     callback_url = event["callback_url"]
@@ -350,7 +379,7 @@ def run_pipeline(event: dict) -> None:
 
     try:
         if _should_run("EXTRACTING_FRAMES", resume_from):
-            _checkpoint(callback_url, job_id, "EXTRACTING_FRAMES")
+            _checkpoint(callback_url, job_id, run_id, "EXTRACTING_FRAMES")
             gif_result = _invoke_gif_processor({
                 "action": "extract_frames",
                 "gif_url": gif_url,
@@ -362,19 +391,23 @@ def run_pipeline(event: dict) -> None:
         frame_keys = [_frame_key(job_id, i) for i in range(len(durations_ms))]
 
         if _should_run("ANALYZING", resume_from):
-            _checkpoint(callback_url, job_id, "ANALYZING", durations_ms=durations_ms)
+            _checkpoint(callback_url, job_id, run_id, "ANALYZING", durations_ms=durations_ms)
             spec_data = analyze(frame_keys, target_key)
 
         if _should_run("GENERATING_DRAFT", resume_from):
-            _checkpoint(callback_url, job_id, "GENERATING_DRAFT", spec=spec_data)
+            _checkpoint(callback_url, job_id, run_id, "GENERATING_DRAFT", spec=spec_data)
             ref_frame_key = frame_keys[spec_data["draft_reference_frame"]] if spec_data.get("draft_reference_frame") is not None else None
-            generate_draft(target_key, ref_frame_key, spec_data, draft_key)
+            draft_started_at = generate_draft(target_key, ref_frame_key, spec_data, draft_key, callback_url, job_id, run_id)
+        else:
+            draft_started_at = None
 
         if _should_run("COMPOSITING", resume_from):
-            _checkpoint(callback_url, job_id, "COMPOSITING")
-            composite_frames(job_id, frame_keys, draft_key, spec_data)
+            _checkpoint(callback_url, job_id, run_id, "COMPOSITING")
+            if draft_started_at is not None:
+                time.sleep(max(0, 65 - (time.monotonic() - draft_started_at)))
+            composite_frames(job_id, run_id, callback_url, frame_keys, draft_key, spec_data)
 
-        _checkpoint(callback_url, job_id, "BUILDING_GIF")
+        _checkpoint(callback_url, job_id, run_id, "BUILDING_GIF")
         composited_keys = [_composited_key(job_id, i) for i in range(len(durations_ms))]
         _invoke_gif_processor({
             "action": "build_gif",
@@ -383,13 +416,22 @@ def run_pipeline(event: dict) -> None:
             "output_key": result_key,
         })
 
-        _complete(callback_url, job_id, draft_key, result_key)
+        _complete(callback_url, job_id, run_id, draft_key, result_key)
 
     except Exception as e:
-        _fail(callback_url, job_id, str(e))
+        _fail(callback_url, job_id, run_id, str(e))
 
 
 # ── 핸들러 ────────────────────────────────────────────────────
 
 def handler(event, context):
-    run_pipeline(event)
+    job_id = event["job_id"]
+    callback_url = event["callback_url"]
+    run_id = context.aws_request_id
+    try:
+        _ec2_post(callback_url, f"/compositions/{job_id}/start", {"run_id": run_id})
+    except urllib.request.HTTPError as e:
+        if e.code == 409:
+            return
+        raise
+    run_pipeline(event, run_id)

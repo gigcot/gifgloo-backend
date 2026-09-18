@@ -1,4 +1,4 @@
-from sqlalchemy import Column, String, DateTime, JSON
+from sqlalchemy import Column, String, DateTime, JSON, Integer
 
 from config.database import Base
 
@@ -22,3 +22,13 @@ class CompositionJobModel(Base):
     durations_ms = Column(JSON, nullable=True)
     spec = Column(JSON, nullable=True)
     created_at = Column(DateTime(timezone=True), nullable=False)
+
+
+class CompositionGateModel(Base):
+    __tablename__ = "composition_gate"
+
+    id = Column(Integer, primary_key=True)
+    active_job_id = Column(String, nullable=True)
+    active_run_id = Column(String, nullable=True)
+    lease_until = Column(DateTime(timezone=True), nullable=True)
+    last_edit_sent_at = Column(DateTime(timezone=True), nullable=True)

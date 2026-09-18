@@ -14,6 +14,7 @@ from shared.exceptions import (
     ValidationException,
     ExternalServiceException,
     ConfirmationRequiredException,
+    CompositionUnavailableException,
 )
 
 STATUS_MAP: dict[type[DomainException], int] = {
@@ -26,10 +27,24 @@ STATUS_MAP: dict[type[DomainException], int] = {
     ValidationException: 422,
     ExternalServiceException: 502,
     ConfirmationRequiredException: 422,
+    CompositionUnavailableException: 429,
 }
 
 
 def register_error_handlers(app: FastAPI) -> None:
+
+    @app.exception_handler(CompositionUnavailableException)
+    async def composition_unavailable_handler(request: Request, exc: CompositionUnavailableException):
+        headers = (
+            {"Retry-After": str(exc.retry_after_seconds)}
+            if exc.retry_after_seconds is not None
+            else None
+        )
+        return JSONResponse(
+            status_code=429,
+            headers=headers,
+            content={"error": "COMPOSITION_UNAVAILABLE", "message": exc.message},
+        )
 
     @app.exception_handler(ConfirmationRequiredException)
     async def confirmation_handler(request: Request, exc: ConfirmationRequiredException):

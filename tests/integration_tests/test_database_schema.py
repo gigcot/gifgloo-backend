@@ -39,6 +39,7 @@ class DatabaseSchemaIntegrationTest(unittest.TestCase):
         self.assertTrue({
             "assets",
             "composition_jobs",
+            "composition_gate",
             "credit_accounts",
             "credit_lots",
             "credit_transactions",

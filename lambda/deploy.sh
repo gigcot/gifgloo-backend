@@ -128,6 +128,16 @@ deploy_ai_function() {
         "" \
         "R2_ENDPOINT_URL=$R2_ENDPOINT_URL,R2_ACCESS_KEY_ID=$R2_ACCESS_KEY_ID,R2_SECRET_ACCESS_KEY=$R2_SECRET_ACCESS_KEY,R2_BUCKET_NAME=$R2_BUCKET_NAME,OPENAI_API_KEY=$OPENAI_API_KEY,INTERNAL_SECRET=$INTERNAL_SECRET"
 
+    aws lambda wait function-updated \
+        --function-name "$AI_FUNCTION_NAME" \
+        --region "$AWS_REGION"
+
+    aws lambda put-function-event-invoke-config \
+        --function-name "$AI_FUNCTION_NAME" \
+        --maximum-event-age-in-seconds 120 \
+        --maximum-retry-attempts 0 \
+        --region "$AWS_REGION" > /dev/null
+
     echo "✓ ai_processor 배포 완료"
 }
 

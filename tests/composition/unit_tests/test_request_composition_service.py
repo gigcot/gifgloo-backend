@@ -1,9 +1,13 @@
 import unittest
+from datetime import datetime, timedelta, timezone
 
 from composition.application.ports.inbound.request_composition import RequestCompositionCommand
 from composition.application.ports.outbound.aws.feasibility_check_port import FeasibilityCheckResult
 from composition.application.services.request_composition_service import RequestCompositionService
+from composition.domain.aggregates.composition_gate import CompositionGate
+from composition.domain.aggregates.composition_job import CompositionJob
 from composition.domain.value_objects.composition_status import CompositionStatus
+from shared.exceptions import CompositionUnavailableException
 
 
 class _UserVerification:
@@ -88,11 +92,23 @@ class _Transaction:
         self.rollbacks += 1
 
 
+class _GateRepository:
+    def __init__(self):
+        self.gate = CompositionGate(None, None, None, None)
+
+    async def find_for_update(self):
+        return self.gate
+
+    async def update(self, gate):
+        self.gate = gate
+
+
 class RequestCompositionServiceTest(unittest.IsolatedAsyncioTestCase):
     def _service(self, pipeline: _Pipeline):
         credit = _Credit()
         writer = _Writer()
         transaction = _Transaction()
+        gate = _GateRepository()
         service = RequestCompositionService(
             user_verification=_UserVerification(),
             credit=credit,
@@ -101,13 +117,14 @@ class RequestCompositionServiceTest(unittest.IsolatedAsyncioTestCase):
             asset_save=_AssetSave(),
             pipeline_trigger=pipeline,
             composition_repo=writer,
+            gate_repo=gate,
             transaction=transaction,
         )
-        return service, credit, writer, transaction
+        return service, credit, writer, transaction, gate
 
     async def test_deducts_one_use_and_starts_pipeline(self):
         pipeline = _Pipeline()
-        service, credit, writer, transaction = self._service(pipeline)
+        service, credit, writer, transaction, gate = self._service(pipeline)
 
         result = await service.execute(
             RequestCompositionCommand(
@@ -122,9 +139,10 @@ class RequestCompositionServiceTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(writer.job.status, CompositionStatus.PROCESSING)
         self.assertEqual(len(pipeline.commands), 1)
         self.assertEqual(transaction.commits, 1)
+        self.assertEqual(gate.gate.active_job_id, result.composition_job_id)
 
     async def test_restores_original_use_when_pipeline_start_fails(self):
-        service, credit, writer, transaction = self._service(_Pipeline(fail=True))
+        service, credit, writer, transaction, gate = self._service(_Pipeline(fail=True))
 
         with self.assertRaisesRegex(RuntimeError, "pipeline unavailable"):
             await service.execute(
@@ -138,3 +156,42 @@ class RequestCompositionServiceTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(credit.refunded_job_id, writer.job.id)
         self.assertEqual(writer.job.status, CompositionStatus.FAILED)
         self.assertEqual(transaction.commits, 2)
+        self.assertIsNone(gate.gate.active_job_id)
+
+    async def test_rejects_second_job_without_deducting_credit(self):
+        service, credit, writer, _, gate = self._service(_Pipeline())
+        gate.gate.active_job_id = "existing-job"
+        gate.gate.lease_until = datetime.now(timezone.utc) + timedelta(minutes=1)
+
+        with self.assertRaises(CompositionUnavailableException):
+            await service.execute(
+                RequestCompositionCommand(
+                    user_id="user-1",
+                    gif_url="https://gif.example/source.gif",
+                    target_bytes=b"\x89PNG\r\n\x1a\nimage",
+                )
+            )
+
+        self.assertIsNone(credit.deducted_job_id)
+        self.assertIsNone(writer.job)
+
+    async def test_expired_job_is_refunded_before_new_job_is_reserved(self):
+        service, credit, writer, _, gate = self._service(_Pipeline())
+        old_job = CompositionJob("user-1")
+        old_job.start_processing()
+        writer.job = old_job
+        gate.gate.active_job_id = old_job.id
+        gate.gate.active_run_id = "expired-run"
+        gate.gate.lease_until = datetime.now(timezone.utc) - timedelta(seconds=1)
+
+        result = await service.execute(
+            RequestCompositionCommand(
+                user_id="user-1",
+                gif_url="https://gif.example/source.gif",
+                target_bytes=b"\x89PNG\r\n\x1a\nimage",
+            )
+        )
+
+        self.assertEqual(old_job.status, CompositionStatus.FAILED)
+        self.assertEqual(credit.refunded_job_id, old_job.id)
+        self.assertEqual(gate.gate.active_job_id, result.composition_job_id)

@@ -15,6 +15,7 @@ from composition.domain.value_objects.composition_status import CompositionStatu
 from config.composition import (
     get_composition_list_service,
     get_composition_status_service,
+    reconcile_expired_composition_gate,
     get_request_composition_service,
 )
 from shared.metrics import (
@@ -97,6 +98,7 @@ async def get_composition_status(
     service: GetCompositionStatusService = Depends(get_composition_status_service),
 ):
     user_id = _get_user_id(request)
+    await reconcile_expired_composition_gate()
     result = await service.execute(
         GetCompositionStatusQuery(
             composition_job_id=composition_job_id,
@@ -143,6 +145,7 @@ async def stream_composition_status(
                         SSE_DISCONNECT_TOTAL.inc()
                     break
                 try:
+                    await reconcile_expired_composition_gate()
                     result = await service.execute(
                         GetCompositionStatusQuery(
                             composition_job_id=composition_job_id,

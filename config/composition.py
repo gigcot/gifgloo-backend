@@ -17,6 +17,7 @@ from composition.adapter.outbound.domain_bridges.async_user_verification_adapter
 from composition.adapter.outbound.persistence.sqlalchemy_async_composition_repository import (
     SqlAlchemyAsyncCompositionRepository,
 )
+from composition.adapter.outbound.persistence.sqlalchemy_composition_gate_repository import SqlAlchemyCompositionGateRepository
 from composition.adapter.outbound.persistence.sqlalchemy_async_composition_status_reader import (
     SqlAlchemyAsyncCompositionStatusReader,
 )
@@ -75,6 +76,7 @@ def get_request_composition_service(
         asset_save=_make_async_asset_create_adapter(db),
         pipeline_trigger=LambdaPipelineTriggerAdapter(),
         composition_repo=SqlAlchemyAsyncCompositionRepository(db),
+        gate_repo=SqlAlchemyCompositionGateRepository(db),
         transaction=SqlAlchemyAsyncTransaction(db),
     )
 
@@ -98,14 +100,24 @@ def get_composition_status_service() -> GetCompositionStatusService:
     )
 
 
-def get_pipeline_callback_service(
-    db: AsyncSession = Depends(get_async_db),
-) -> PipelineCallbackService:
+def _make_pipeline_callback_service(db: AsyncSession) -> PipelineCallbackService:
     return PipelineCallbackService(
         composition_repo=SqlAlchemyAsyncCompositionRepository(db),
+        gate_repo=SqlAlchemyCompositionGateRepository(db),
         asset_save=_make_async_asset_create_adapter(db),
         storage=R2StorageAdapter(),
         credit=_make_async_credit_adapter(db),
         user_verification=AsyncUserVerificationAdapter(_make_async_verify_user_service(db)),
         transaction=SqlAlchemyAsyncTransaction(db),
     )
+
+
+def get_pipeline_callback_service(
+    db: AsyncSession = Depends(get_async_db),
+) -> PipelineCallbackService:
+    return _make_pipeline_callback_service(db)
+
+
+async def reconcile_expired_composition_gate() -> None:
+    async with AsyncSessionLocal() as db:
+        await _make_pipeline_callback_service(db).reconcile_expired()
