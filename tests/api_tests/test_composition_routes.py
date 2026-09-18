@@ -4,6 +4,7 @@ import types
 import unittest
 from importlib.util import find_spec
 from types import SimpleNamespace
+from unittest.mock import AsyncMock, patch
 
 import jwt
 from fastapi import FastAPI
@@ -32,6 +33,8 @@ from config.composition import (  # noqa: E402
     get_request_composition_service,
 )
 from composition.domain.value_objects.composition_status import CompositionStatus  # noqa: E402
+from shared.exceptions import CompositionUnavailableException  # noqa: E402
+from shared.fastapi_error_handler import register_error_handlers  # noqa: E402
 from shared.metrics import normalized_path  # noqa: E402
 
 
@@ -48,6 +51,11 @@ class _RequestCompositionService:
         return _RequestCompositionResult()
 
 
+class _UnavailableCompositionService:
+    async def execute(self, command):
+        raise CompositionUnavailableException("잠시 후 다시 시도해 주세요", retry_after_seconds=42)
+
+
 class _PipelineCallbackService:
     def __init__(self):
         self.completed = None
@@ -55,9 +63,13 @@ class _PipelineCallbackService:
     async def checkpoint(self, *args, **kwargs):
         pass
 
-    async def complete(self, job_id: str, draft_key: str, result_key: str):
+    async def reconcile_expired(self):
+        pass
+
+    async def complete(self, job_id: str, run_id: str, draft_key: str, result_key: str):
         self.completed = {
             "job_id": job_id,
+            "run_id": run_id,
             "draft_key": draft_key,
             "result_key": result_key,
         }
@@ -86,10 +98,17 @@ class _CompositionStatusService:
 
 class CompositionRoutesTest(unittest.TestCase):
     def setUp(self):
+        reconcile_patch = patch(
+            "composition.adapter.inbound.fastapi.composition_router.reconcile_expired_composition_gate",
+            new_callable=AsyncMock,
+        )
+        reconcile_patch.start()
+        self.addCleanup(reconcile_patch.stop)
         self.request_service = _RequestCompositionService()
         self.callback_service = _PipelineCallbackService()
         self.status_service = _CompositionStatusService()
         app = FastAPI()
+        register_error_handlers(app)
         app.include_router(composition_router)
         app.include_router(composition_internal_router)
         app.dependency_overrides[get_request_composition_service] = lambda: self.request_service
@@ -120,10 +139,24 @@ class CompositionRoutesTest(unittest.TestCase):
         self.assertEqual(self.request_service.command.target_bytes, b"image-bytes")
         self.assertTrue(self.request_service.command.acknowledge_frame_reduction)
 
+    def test_busy_composition_returns_retry_after(self):
+        self._set_auth_cookie()
+        self.client.app.dependency_overrides[get_request_composition_service] = _UnavailableCompositionService
+
+        response = self.client.post(
+            "/compositions",
+            data={"gif_url": "https://assets.example/source.gif"},
+            files={"target_file": ("target.png", b"image-bytes", "image/png")},
+        )
+
+        self.assertEqual(response.status_code, 429)
+        self.assertEqual(response.headers["Retry-After"], "42")
+        self.assertEqual(response.json()["error"], "COMPOSITION_UNAVAILABLE")
+
     def test_internal_complete_requires_secret_and_calls_service(self):
         response = self.client.post(
             "/internal/compositions/job-1/complete",
-            json={"draft_key": "draft.png", "result_key": "result.gif"},
+            json={"run_id": "run-1", "draft_key": "draft.png", "result_key": "result.gif"},
             headers={"X-Internal-Secret": os.environ["INTERNAL_SECRET"]},
         )
 
@@ -132,6 +165,7 @@ class CompositionRoutesTest(unittest.TestCase):
             self.callback_service.completed,
             {
                 "job_id": "job-1",
+                "run_id": "run-1",
                 "draft_key": "draft.png",
                 "result_key": "result.gif",
             },
@@ -156,7 +190,7 @@ class CompositionRoutesTest(unittest.TestCase):
     def test_internal_complete_rejects_missing_secret(self):
         response = self.client.post(
             "/internal/compositions/job-1/complete",
-            json={"draft_key": "draft.png", "result_key": "result.gif"},
+            json={"run_id": "run-1", "draft_key": "draft.png", "result_key": "result.gif"},
         )
 
         self.assertEqual(response.status_code, 403)

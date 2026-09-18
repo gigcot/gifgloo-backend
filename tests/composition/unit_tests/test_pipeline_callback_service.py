@@ -1,8 +1,11 @@
 import unittest
+from datetime import datetime, timedelta, timezone
 
 from composition.application.services.pipeline_callback_service import PipelineCallbackService
+from composition.domain.aggregates.composition_gate import CompositionGate
 from composition.domain.aggregates.composition_job import CompositionJob
 from composition.domain.value_objects.composition_status import CompositionStatus
+from shared.exceptions import InvalidStateException
 
 
 class _CompositionRepository:
@@ -53,6 +56,22 @@ class _Transaction:
         self.rollbacks += 1
 
 
+class _GateRepository:
+    def __init__(self, job_id):
+        self.gate = CompositionGate(job_id, "run-1", datetime.now(timezone.utc) + timedelta(minutes=10), None)
+
+    async def find_for_update(self):
+        return self.gate
+
+    async def find_expired_job_id(self, now):
+        if self.gate.lease_until is not None and self.gate.lease_until <= now:
+            return self.gate.active_job_id
+        return None
+
+    async def update(self, gate):
+        self.gate = gate
+
+
 class PipelineCallbackServiceTest(unittest.IsolatedAsyncioTestCase):
     def _service(self):
         job = CompositionJob("user-1")
@@ -60,39 +79,71 @@ class PipelineCallbackServiceTest(unittest.IsolatedAsyncioTestCase):
         repository = _CompositionRepository(job)
         credit = _Credit()
         transaction = _Transaction()
+        gate = _GateRepository(job.id)
         service = PipelineCallbackService(
             composition_repo=repository,
+            gate_repo=gate,
             asset_save=_AssetSave(),
             storage=_Storage(),
             credit=credit,
             user_verification=_UserVerification(),
             transaction=transaction,
         )
-        return service, repository, credit, transaction
+        return service, repository, credit, transaction, gate
 
     async def test_complete_commits_result(self):
-        service, repository, _, transaction = self._service()
+        service, repository, _, transaction, gate = self._service()
 
-        await service.complete(repository.job.id, "draft.png", "result.gif")
+        await service.complete(repository.job.id, "run-1", "draft.png", "result.gif")
 
         self.assertEqual(repository.job.status, CompositionStatus.COMPLETED)
         self.assertEqual(repository.saves, 1)
         self.assertEqual(transaction.commits, 1)
+        self.assertIsNone(gate.gate.active_job_id)
 
     async def test_fail_restores_use_in_same_transaction(self):
-        service, repository, credit, transaction = self._service()
+        service, repository, credit, transaction, gate = self._service()
 
-        await service.fail(repository.job.id, "pipeline failed")
+        await service.fail(repository.job.id, "run-1", "pipeline failed")
 
         self.assertEqual(repository.job.status, CompositionStatus.FAILED)
         self.assertEqual(credit.refunds, [("user-1", repository.job.id)])
         self.assertEqual(repository.saves, 1)
         self.assertEqual(transaction.commits, 1)
+        self.assertIsNone(gate.gate.active_job_id)
 
     async def test_duplicate_fail_does_not_restore_twice(self):
-        service, repository, credit, _ = self._service()
+        service, repository, credit, _, _ = self._service()
 
-        await service.fail(repository.job.id, "pipeline failed")
-        await service.fail(repository.job.id, "pipeline failed")
+        await service.fail(repository.job.id, "run-1", "pipeline failed")
+        with self.assertRaises(InvalidStateException):
+            await service.fail(repository.job.id, "run-1", "pipeline failed")
 
         self.assertEqual(credit.refunds, [("user-1", repository.job.id)])
+
+    async def test_expired_run_is_refunded_and_released(self):
+        service, repository, credit, transaction, gate = self._service()
+        gate.gate.lease_until = datetime.now(timezone.utc) - timedelta(seconds=1)
+
+        await service.reconcile_expired()
+
+        self.assertEqual(repository.job.status, CompositionStatus.FAILED)
+        self.assertEqual(credit.refunds, [("user-1", repository.job.id)])
+        self.assertIsNone(gate.gate.active_job_id)
+        self.assertEqual(transaction.commits, 1)
+
+        await service.reconcile_expired()
+        self.assertEqual(credit.refunds, [("user-1", repository.job.id)])
+
+    async def test_only_claimed_lambda_run_can_record_edits(self):
+        service, repository, _, _, gate = self._service()
+        gate.gate.active_run_id = None
+
+        await service.start(repository.job.id, "run-1")
+        await service.record_edit(repository.job.id, "run-1")
+
+        self.assertIsNotNone(gate.gate.last_edit_sent_at)
+        with self.assertRaises(InvalidStateException):
+            await service.start(repository.job.id, "run-2")
+        with self.assertRaises(InvalidStateException):
+            await service.record_edit(repository.job.id, "run-2")

@@ -54,3 +54,9 @@ class ConfirmationRequiredException(DomainException):
         self.code = code
         self.proposal = proposal
         super().__init__(message)
+
+
+class CompositionUnavailableException(DomainException):
+    def __init__(self, message: str, retry_after_seconds: int | None = None):
+        self.retry_after_seconds = retry_after_seconds
+        super().__init__(message)
