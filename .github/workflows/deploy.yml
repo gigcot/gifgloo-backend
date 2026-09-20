@@ -274,6 +274,8 @@ jobs:
             docker compose -f docker-compose.prod.yml run --rm --no-deps app alembic upgrade head
             docker compose -f docker-compose.prod.yml up -d app
             docker compose --env-file .env -f monitoring/docker-compose.yml up -d
+            sudo nginx -t
+            sudo systemctl reload nginx
             docker image prune -f
             if [ -n "${{ secrets.GHCR_USER }}" ] && [ -n "${{ secrets.GHCR_TOKEN }}" ]; then
               docker logout ghcr.io
