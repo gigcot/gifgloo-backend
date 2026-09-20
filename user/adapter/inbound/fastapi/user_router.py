@@ -56,7 +56,7 @@ def get_current_user(
     service: GetUserService = Depends(get_user_service),
 ):
     result = service.execute(GetUserQuery(user_id=_get_user_id(request)))
-    return {"ok": True, "email": result.email}
+    return {"ok": True, "user_id": result.user_id, "email": result.email}
 
 
 @router.post("/me/consents")

@@ -42,12 +42,13 @@ class FakeRecordSignupConsentService:
 
 class FakeGetUserService:
     def __init__(self, email="member@example.com"):
+        self.user_id = "user-1"
         self.email = email
         self.query = None
 
     def execute(self, query):
         self.query = query
-        return SimpleNamespace(email=self.email)
+        return SimpleNamespace(user_id=self.user_id, email=self.email)
 
 
 class UserRoutesTest(unittest.TestCase):
@@ -104,7 +105,10 @@ class UserRoutesTest(unittest.TestCase):
         response = self.client.get("/users/me")
 
         self.assertEqual(response.status_code, 200)
-        self.assertEqual(response.json(), {"ok": True, "email": "member@example.com"})
+        self.assertEqual(
+            response.json(),
+            {"ok": True, "user_id": "user-1", "email": "member@example.com"},
+        )
         self.assertEqual(self.get_user_service.query.user_id, "user-1")
 
     def test_returns_null_when_authenticated_user_has_no_email(self):
@@ -114,7 +118,10 @@ class UserRoutesTest(unittest.TestCase):
         response = self.client.get("/users/me")
 
         self.assertEqual(response.status_code, 200)
-        self.assertEqual(response.json(), {"ok": True, "email": None})
+        self.assertEqual(
+            response.json(),
+            {"ok": True, "user_id": "user-1", "email": None},
+        )
 
     def test_rejects_existing_review_session_when_review_login_is_disabled(self):
         token = jwt.encode(
