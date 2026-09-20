@@ -34,6 +34,7 @@ from shared.asset_category import AssetCategory
 from shared.exceptions import (
     AuthorizationException,
     BusinessRuleException,
+    CompositionUnavailableException,
     ConfirmationRequiredException,
     InsufficientCreditException,
     NotFoundException,
@@ -84,7 +85,11 @@ class RequestCompositionService(RequestCompositionPort):
         if not await self._credit.has_enough_credit(command.user_id):
             raise InsufficientCreditException("사용 가능한 GIF 합성 이용권이 없습니다")
 
+        has_active_lease = await self._gate_repo.has_active_lease(datetime.now(timezone.utc))
         await self._transaction.rollback()
+        if has_active_lease:
+            raise CompositionUnavailableException("다른 합성 작업이 진행 중입니다")
+
         feasibility = await self._feasibility.check(
             FeasibilityCheckCommand(gif_url=command.gif_url)
         )

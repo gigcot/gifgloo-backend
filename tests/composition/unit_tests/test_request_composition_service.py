@@ -31,7 +31,11 @@ class _Credit:
 
 
 class _Feasibility:
+    def __init__(self):
+        self.calls = 0
+
     async def check(self, command) -> FeasibilityCheckResult:
+        self.calls += 1
         return FeasibilityCheckResult(ok=True, frame_count=1)
 
 
@@ -96,6 +100,13 @@ class _GateRepository:
     def __init__(self):
         self.gate = CompositionGate(None, None, None, None)
 
+    async def has_active_lease(self, now):
+        return (
+            self.gate.active_job_id is not None
+            and self.gate.lease_until is not None
+            and self.gate.lease_until > now
+        )
+
     async def find_for_update(self):
         return self.gate
 
@@ -106,13 +117,14 @@ class _GateRepository:
 class RequestCompositionServiceTest(unittest.IsolatedAsyncioTestCase):
     def _service(self, pipeline: _Pipeline):
         credit = _Credit()
+        feasibility = _Feasibility()
         writer = _Writer()
         transaction = _Transaction()
         gate = _GateRepository()
         service = RequestCompositionService(
             user_verification=_UserVerification(),
             credit=credit,
-            feasibility=_Feasibility(),
+            feasibility=feasibility,
             storage=_Storage(),
             asset_save=_AssetSave(),
             pipeline_trigger=pipeline,
@@ -120,11 +132,11 @@ class RequestCompositionServiceTest(unittest.IsolatedAsyncioTestCase):
             gate_repo=gate,
             transaction=transaction,
         )
-        return service, credit, writer, transaction, gate
+        return service, credit, feasibility, writer, transaction, gate
 
     async def test_deducts_one_use_and_starts_pipeline(self):
         pipeline = _Pipeline()
-        service, credit, writer, transaction, gate = self._service(pipeline)
+        service, credit, _, writer, transaction, gate = self._service(pipeline)
 
         result = await service.execute(
             RequestCompositionCommand(
@@ -142,7 +154,7 @@ class RequestCompositionServiceTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(gate.gate.active_job_id, result.composition_job_id)
 
     async def test_restores_original_use_when_pipeline_start_fails(self):
-        service, credit, writer, transaction, gate = self._service(_Pipeline(fail=True))
+        service, credit, _, writer, transaction, gate = self._service(_Pipeline(fail=True))
 
         with self.assertRaisesRegex(RuntimeError, "pipeline unavailable"):
             await service.execute(
@@ -159,7 +171,7 @@ class RequestCompositionServiceTest(unittest.IsolatedAsyncioTestCase):
         self.assertIsNone(gate.gate.active_job_id)
 
     async def test_rejects_second_job_without_deducting_credit(self):
-        service, credit, writer, _, gate = self._service(_Pipeline())
+        service, credit, feasibility, writer, _, gate = self._service(_Pipeline())
         gate.gate.active_job_id = "existing-job"
         gate.gate.lease_until = datetime.now(timezone.utc) + timedelta(minutes=1)
 
@@ -174,9 +186,10 @@ class RequestCompositionServiceTest(unittest.IsolatedAsyncioTestCase):
 
         self.assertIsNone(credit.deducted_job_id)
         self.assertIsNone(writer.job)
+        self.assertEqual(feasibility.calls, 0)
 
     async def test_expired_job_is_refunded_before_new_job_is_reserved(self):
-        service, credit, writer, _, gate = self._service(_Pipeline())
+        service, credit, _, writer, _, gate = self._service(_Pipeline())
         old_job = CompositionJob("user-1")
         old_job.start_processing()
         writer.job = old_job

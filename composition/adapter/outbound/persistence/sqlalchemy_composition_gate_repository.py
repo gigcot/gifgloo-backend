@@ -12,6 +12,16 @@ class SqlAlchemyCompositionGateRepository(CompositionGateRepository):
     def __init__(self, session: AsyncSession):
         self._session = session
 
+    async def has_active_lease(self, now: datetime) -> bool:
+        return (
+            await self._session.execute(
+                select(CompositionGateModel.id)
+                .where(CompositionGateModel.id == 1)
+                .where(CompositionGateModel.active_job_id.is_not(None))
+                .where(CompositionGateModel.lease_until > now)
+            )
+        ).scalar_one_or_none() is not None
+
     async def find_expired_job_id(self, now: datetime) -> str | None:
         return (
             await self._session.execute(
