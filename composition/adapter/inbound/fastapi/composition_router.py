@@ -3,11 +3,15 @@ import logging
 import os
 
 import jwt
-from fastapi import APIRouter, Depends, HTTPException, Request, UploadFile, File, Form, Query
+from fastapi import APIRouter, Depends, HTTPException, Request, UploadFile, File, Form, Query, Response
 from fastapi.responses import StreamingResponse
+from pydantic import BaseModel
 
 from composition.application.ports.inbound.get_composition_status import GetCompositionStatusQuery
 from composition.application.ports.inbound.request_composition import RequestCompositionCommand
+from composition.application.ports.inbound.submit_composition_feedback import (
+    SubmitCompositionFeedbackCommand,
+)
 from composition.application.services.get_composition_list_service import GetCompositionListService
 from composition.application.services.get_composition_status_service import GetCompositionStatusService
 from composition.application.services.request_composition_service import RequestCompositionService
@@ -17,6 +21,10 @@ from config.composition import (
     get_composition_status_service,
     reconcile_expired_composition_gate,
     get_request_composition_service,
+    get_submit_composition_feedback_service,
+)
+from composition.application.services.submit_composition_feedback_service import (
+    SubmitCompositionFeedbackService,
 )
 from shared.metrics import (
     SSE_ACTIVE_CONNECTIONS,
@@ -31,6 +39,10 @@ router = APIRouter(prefix="/compositions", tags=["composition"])
 logger = logging.getLogger(__name__)
 
 SECRET_KEY = os.getenv("JWT_SECRET_KEY")
+
+
+class CompositionFeedbackBody(BaseModel):
+    satisfied: bool
 
 
 def _get_user_id(request: Request) -> str:
@@ -123,6 +135,25 @@ async def get_composition_status(
             else None
         ),
     }
+
+
+@router.put("/{composition_job_id}/feedback", status_code=204)
+async def submit_composition_feedback(
+    request: Request,
+    composition_job_id: str,
+    body: CompositionFeedbackBody,
+    service: SubmitCompositionFeedbackService = Depends(
+        get_submit_composition_feedback_service
+    ),
+):
+    await service.execute(
+        SubmitCompositionFeedbackCommand(
+            composition_job_id=composition_job_id,
+            user_id=_get_user_id(request),
+            satisfied=body.satisfied,
+        )
+    )
+    return Response(status_code=204)
 
 
 @router.get("/{composition_job_id}/status")

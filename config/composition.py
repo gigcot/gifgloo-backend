@@ -22,10 +22,16 @@ from composition.adapter.outbound.persistence.sqlalchemy_async_composition_statu
     SqlAlchemyAsyncCompositionStatusReader,
 )
 from composition.adapter.outbound.persistence.sqlalchemy_async_transaction import SqlAlchemyAsyncTransaction
+from composition.adapter.outbound.persistence.sqlalchemy_composition_feedback_repository import (
+    SqlAlchemyCompositionFeedbackRepository,
+)
 from composition.application.services.get_composition_list_service import GetCompositionListService
 from composition.application.services.get_composition_status_service import GetCompositionStatusService
 from composition.application.services.pipeline_callback_service import PipelineCallbackService
 from composition.application.services.request_composition_service import RequestCompositionService
+from composition.application.services.submit_composition_feedback_service import (
+    SubmitCompositionFeedbackService,
+)
 from config.database import AsyncSessionLocal, get_async_db
 from credit_account.adapter.outbound.async_user_verification import (
     AsyncUserVerificationAdapter as CreditUserVerificationAdapter,
@@ -97,6 +103,16 @@ def get_composition_status_service() -> GetCompositionStatusService:
                 SqlAlchemyAsyncCreditSummaryReader(AsyncSessionLocal)
             )
         ),
+    )
+
+
+def get_submit_composition_feedback_service(
+    db: AsyncSession = Depends(get_async_db),
+) -> SubmitCompositionFeedbackService:
+    return SubmitCompositionFeedbackService(
+        status_reader=SqlAlchemyAsyncCompositionStatusReader(AsyncSessionLocal),
+        feedback_repo=SqlAlchemyCompositionFeedbackRepository(db),
+        transaction=SqlAlchemyAsyncTransaction(db),
     )
 
 
