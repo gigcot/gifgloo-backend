@@ -31,6 +31,7 @@ from config.composition import (  # noqa: E402
     get_composition_status_service,
     get_pipeline_callback_service,
     get_request_composition_service,
+    get_submit_composition_feedback_service,
 )
 from composition.domain.value_objects.composition_status import CompositionStatus  # noqa: E402
 from shared.exceptions import CompositionUnavailableException  # noqa: E402
@@ -96,6 +97,14 @@ class _CompositionStatusService:
         )
 
 
+class _CompositionFeedbackService:
+    def __init__(self):
+        self.command = None
+
+    async def execute(self, command):
+        self.command = command
+
+
 class CompositionRoutesTest(unittest.TestCase):
     def setUp(self):
         reconcile_patch = patch(
@@ -107,6 +116,7 @@ class CompositionRoutesTest(unittest.TestCase):
         self.request_service = _RequestCompositionService()
         self.callback_service = _PipelineCallbackService()
         self.status_service = _CompositionStatusService()
+        self.feedback_service = _CompositionFeedbackService()
         app = FastAPI()
         register_error_handlers(app)
         app.include_router(composition_router)
@@ -114,6 +124,9 @@ class CompositionRoutesTest(unittest.TestCase):
         app.dependency_overrides[get_request_composition_service] = lambda: self.request_service
         app.dependency_overrides[get_pipeline_callback_service] = lambda: self.callback_service
         app.dependency_overrides[get_composition_status_service] = lambda: self.status_service
+        app.dependency_overrides[get_submit_composition_feedback_service] = (
+            lambda: self.feedback_service
+        )
         self.client = TestClient(app)
 
     def _set_auth_cookie(self) -> None:
@@ -138,6 +151,19 @@ class CompositionRoutesTest(unittest.TestCase):
         self.assertEqual(self.request_service.command.gif_url, "https://assets.example/source.gif")
         self.assertEqual(self.request_service.command.target_bytes, b"image-bytes")
         self.assertTrue(self.request_service.command.acknowledge_frame_reduction)
+
+    def test_submit_composition_feedback(self):
+        self._set_auth_cookie()
+
+        response = self.client.put(
+            "/compositions/job-1/feedback",
+            json={"satisfied": True},
+        )
+
+        self.assertEqual(response.status_code, 204)
+        self.assertEqual(self.feedback_service.command.composition_job_id, "job-1")
+        self.assertEqual(self.feedback_service.command.user_id, "user-1")
+        self.assertTrue(self.feedback_service.command.satisfied)
 
     def test_busy_composition_returns_retry_after(self):
         self._set_auth_cookie()
