@@ -38,6 +38,7 @@ jobs:
               - 'migrations/**'
               - 'requirements.txt'
               - 'main.py'
+              - 'admin/**'
               - 'asset/**'
               - 'audit/**'
               - 'composition/**'
