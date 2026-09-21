@@ -18,10 +18,17 @@ os.environ.setdefault("R2_ENDPOINT_URL", "http://localhost:9000")
 os.environ.setdefault("R2_ACCESS_KEY_ID", "test")
 os.environ.setdefault("R2_SECRET_ACCESS_KEY", "test")
 os.environ.setdefault("R2_BUCKET_NAME", "gifgloo-test")
+os.environ.setdefault("R2_UPLOAD_BUCKET_NAME", "gifgloo-upload-test")
 os.environ.setdefault("R2_PUBLIC_URL", "http://localhost:9000/gifgloo-test")
 
 if find_spec("aioboto3") is None:
     sys.modules["aioboto3"] = types.SimpleNamespace(Session=lambda: None)
+if find_spec("botocore") is None:
+    botocore_module = types.ModuleType("botocore")
+    botocore_exceptions = types.ModuleType("botocore.exceptions")
+    botocore_exceptions.ClientError = type("ClientError", (Exception,), {})
+    sys.modules["botocore"] = botocore_module
+    sys.modules["botocore.exceptions"] = botocore_exceptions
 
 from composition.adapter.inbound.fastapi.composition_internal_router import (  # noqa: E402
     router as composition_internal_router,
@@ -31,6 +38,7 @@ from config.composition import (  # noqa: E402
     get_composition_status_service,
     get_pipeline_callback_service,
     get_request_composition_service,
+    get_prepare_composition_upload_service,
     get_submit_composition_feedback_service,
 )
 from composition.domain.value_objects.composition_status import CompositionStatus  # noqa: E402
@@ -55,6 +63,16 @@ class _RequestCompositionService:
 class _UnavailableCompositionService:
     async def execute(self, command):
         raise CompositionUnavailableException("잠시 후 다시 시도해 주세요", retry_after_seconds=42)
+
+
+class _PrepareUploadService:
+    async def execute(self, command):
+        return SimpleNamespace(
+            upload_id="upload-1",
+            upload_url="https://uploads.example/signed",
+            headers={"Content-Type": command.content_type},
+            expires_in_seconds=600,
+        )
 
 
 class _PipelineCallbackService:
@@ -122,6 +140,7 @@ class CompositionRoutesTest(unittest.TestCase):
         app.include_router(composition_router)
         app.include_router(composition_internal_router)
         app.dependency_overrides[get_request_composition_service] = lambda: self.request_service
+        app.dependency_overrides[get_prepare_composition_upload_service] = lambda: _PrepareUploadService()
         app.dependency_overrides[get_pipeline_callback_service] = lambda: self.callback_service
         app.dependency_overrides[get_composition_status_service] = lambda: self.status_service
         app.dependency_overrides[get_submit_composition_feedback_service] = (
@@ -149,8 +168,37 @@ class CompositionRoutesTest(unittest.TestCase):
         self.assertEqual(response.json(), {"composition_job_id": "job-1"})
         self.assertEqual(self.request_service.command.user_id, "user-1")
         self.assertEqual(self.request_service.command.gif_url, "https://assets.example/source.gif")
-        self.assertEqual(self.request_service.command.target_bytes, b"image-bytes")
+        self.assertEqual(self.request_service.command.target.data, b"image-bytes")
         self.assertTrue(self.request_service.command.acknowledge_frame_reduction)
+
+    def test_prepares_direct_upload(self):
+        self._set_auth_cookie()
+
+        response = self.client.post(
+            "/compositions/uploads",
+            json={"content_type": "image/heic", "size": 1024},
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["upload_id"], "upload-1")
+
+    def test_requests_composition_from_direct_upload(self):
+        self._set_auth_cookie()
+
+        response = self.client.post(
+            "/compositions/from-upload",
+            json={
+                "gif_url": "https://assets.example/source.gif",
+                "upload_id": "0e65188c-13a0-4f08-b176-c6f62482db49",
+                "acknowledge_frame_reduction": True,
+            },
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(
+            self.request_service.command.target.upload_id,
+            "0e65188c-13a0-4f08-b176-c6f62482db49",
+        )
 
     def test_submit_composition_feedback(self):
         self._set_auth_cookie()

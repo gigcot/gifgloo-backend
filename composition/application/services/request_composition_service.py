@@ -1,9 +1,11 @@
 from datetime import datetime, timezone
 
 from composition.application.ports.inbound.request_composition import (
+    InlineTargetImage,
     RequestCompositionCommand,
     RequestCompositionPort,
     RequestCompositionResult,
+    StagedTargetImage,
 )
 from composition.application.ports.outbound.aws.feasibility_check_port import (
     FeasibilityCheckCommand,
@@ -14,6 +16,10 @@ from composition.application.ports.outbound.aws.pipeline_trigger_port import (
     PipelineTriggerPort,
 )
 from composition.application.ports.outbound.aws.storage_port import StorageCategory, StoragePort
+from composition.application.ports.outbound.aws.upload_staging_port import (
+    ResolveUploadCommand,
+    UploadStagingPort,
+)
 from composition.application.ports.outbound.domain_bridges.asset_save_port import (
     AssetSaveCommand,
     AssetSavePort,
@@ -62,6 +68,7 @@ class RequestCompositionService(RequestCompositionPort):
         credit: CreditPort,
         feasibility: FeasibilityCheckPort,
         storage: StoragePort,
+        upload_staging: UploadStagingPort,
         asset_save: AssetSavePort,
         pipeline_trigger: PipelineTriggerPort,
         composition_repo: AsyncCompositionRepository,
@@ -72,6 +79,7 @@ class RequestCompositionService(RequestCompositionPort):
         self._credit = credit
         self._feasibility = feasibility
         self._storage = storage
+        self._upload_staging = upload_staging
         self._asset_save = asset_save
         self._pipeline_trigger = pipeline_trigger
         self._composition_repo = composition_repo
@@ -81,7 +89,8 @@ class RequestCompositionService(RequestCompositionPort):
     async def execute(self, command: RequestCompositionCommand) -> RequestCompositionResult:
         if not await self._user_verification.is_active_user(command.user_id):
             raise AuthorizationException("유효하지 않은 유저입니다")
-        _validate_image_format(command.target_bytes)
+        if isinstance(command.target, InlineTargetImage):
+            _validate_image_format(command.target.data)
         if not await self._credit.has_enough_credit(command.user_id):
             raise InsufficientCreditException("사용 가능한 GIF 합성 이용권이 없습니다")
 
@@ -123,11 +132,18 @@ class RequestCompositionService(RequestCompositionPort):
                 gate.release(gate.active_job_id)
             gate.reserve(job.id, now)
             await self._gate_repo.update(gate)
-            target_key = await self._storage.upload(
-                job.id,
-                StorageCategory.TARGET,
-                command.target_bytes,
-            )
+            target_upload_key = None
+            if isinstance(command.target, InlineTargetImage):
+                target_key = await self._storage.upload(
+                    job.id,
+                    StorageCategory.TARGET,
+                    command.target.data,
+                )
+            else:
+                target_upload_key = await self._upload_staging.resolve(
+                    ResolveUploadCommand(command.user_id, command.target.upload_id)
+                )
+                target_key = self._storage.make_key(job.id, StorageCategory.TARGET)
             target_url = self._storage.public_url_for(target_key)
             job.target_url = target_url
             job.source_gif_asset_id = await self._asset_save.save(
@@ -162,6 +178,7 @@ class RequestCompositionService(RequestCompositionPort):
                     target_key=target_key,
                     user_id=command.user_id,
                     max_frames=MAX_FRAMES,
+                    target_upload_key=target_upload_key,
                 )
             )
         except Exception as exc:

@@ -110,7 +110,7 @@ deploy_ai_function() {
     mkdir -p /tmp/ai_build
     cp "$AI_FUNCTION_DIR/handler.py" /tmp/ai_build/
     cp -r "$AI_FUNCTION_DIR/prompts/" /tmp/ai_build/prompts/
-    pip3 install openai \
+    python3.12 -m pip install -r "$AI_FUNCTION_DIR/requirements.txt" \
         -t /tmp/ai_build \
         --quiet \
         --platform manylinux2014_x86_64 \
@@ -126,7 +126,7 @@ deploy_ai_function() {
         "$AI_MEMORY" \
         "$AI_TIMEOUT" \
         "" \
-        "R2_ENDPOINT_URL=$R2_ENDPOINT_URL,R2_ACCESS_KEY_ID=$R2_ACCESS_KEY_ID,R2_SECRET_ACCESS_KEY=$R2_SECRET_ACCESS_KEY,R2_BUCKET_NAME=$R2_BUCKET_NAME,OPENAI_API_KEY=$OPENAI_API_KEY,INTERNAL_SECRET=$INTERNAL_SECRET"
+        "R2_ENDPOINT_URL=$R2_ENDPOINT_URL,R2_ACCESS_KEY_ID=$R2_ACCESS_KEY_ID,R2_SECRET_ACCESS_KEY=$R2_SECRET_ACCESS_KEY,R2_BUCKET_NAME=$R2_BUCKET_NAME,R2_UPLOAD_BUCKET_NAME=$R2_UPLOAD_BUCKET_NAME,OPENAI_API_KEY=$OPENAI_API_KEY,INTERNAL_SECRET=$INTERNAL_SECRET"
 
     aws lambda wait function-updated \
         --function-name "$AI_FUNCTION_NAME" \

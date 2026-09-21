@@ -42,6 +42,11 @@ class ValidationException(DomainException):
     pass
 
 
+class PayloadTooLargeException(DomainException):
+    """요청 또는 파일 크기 초과 → 413"""
+    pass
+
+
 class ExternalServiceException(DomainException):
     """외부 서비스 호출 실패 → 502"""
     pass

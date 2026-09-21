@@ -14,8 +14,11 @@ from threading import Lock
 
 import boto3
 from openai import OpenAI
+from PIL import Image, ImageOps, UnidentifiedImageError
+from pillow_heif import register_heif_opener
 
 BUCKET_NAME = os.environ.get("R2_BUCKET_NAME", "gifgloo")
+UPLOAD_BUCKET_NAME = os.environ["R2_UPLOAD_BUCKET_NAME"]
 IMAGE_MODEL = "gpt-image-1.5"
 OUTPUT_SIZE = "1024x1024"
 GIF_PROCESSOR_FUNCTION = "gifgloo-gif-processor"
@@ -72,6 +75,12 @@ RESPONSE_FORMAT = {
 STAGE_ORDER = ["EXTRACTING_FRAMES", "ANALYZING", "GENERATING_DRAFT", "COMPOSITING", "BUILDING_GIF"]
 
 openai_client = OpenAI(max_retries=6)
+register_heif_opener()
+
+MAX_TARGET_UPLOAD_BYTES = 15 * 1024 * 1024
+MAX_TARGET_IMAGE_PIXELS = 20_000_000
+MAX_TARGET_IMAGE_EDGE = 2048
+ALLOWED_TARGET_FORMATS = {"JPEG", "PNG", "WEBP", "HEIF", "HEIC"}
 
 
 # ── R2 클라이언트 ─────────────────────────────────────────────
@@ -93,6 +102,38 @@ def _download(client, key: str) -> bytes:
 
 def _upload_png(client, key: str, data: bytes) -> None:
     client.put_object(Bucket=BUCKET_NAME, Key=key, Body=data, ContentType="image/png")
+
+
+def _normalize_target(client, target_key: str, upload_key: str | None) -> None:
+    source_bucket = UPLOAD_BUCKET_NAME if upload_key else BUCKET_NAME
+    source_key = upload_key or target_key
+    try:
+        response = client.get_object(Bucket=source_bucket, Key=source_key)
+        data = response["Body"].read(MAX_TARGET_UPLOAD_BYTES + 1)
+        if len(data) > MAX_TARGET_UPLOAD_BYTES:
+            raise ValueError("업로드 이미지가 15MB를 초과합니다")
+
+        try:
+            with Image.open(io.BytesIO(data)) as opened:
+                if opened.format not in ALLOWED_TARGET_FORMATS:
+                    raise ValueError("지원하지 않는 이미지 형식입니다")
+                width, height = opened.size
+                if width < 1 or height < 1 or width * height > MAX_TARGET_IMAGE_PIXELS:
+                    raise ValueError("이미지 해상도가 너무 큽니다")
+                opened.seek(0)
+                normalized = ImageOps.exif_transpose(opened)
+                normalized.thumbnail((MAX_TARGET_IMAGE_EDGE, MAX_TARGET_IMAGE_EDGE))
+                if normalized.mode not in {"RGB", "RGBA"}:
+                    normalized = normalized.convert("RGBA" if "A" in normalized.getbands() else "RGB")
+                output = io.BytesIO()
+                normalized.save(output, format="PNG", optimize=True)
+        except (UnidentifiedImageError, OSError) as exc:
+            raise ValueError("손상되었거나 지원하지 않는 이미지입니다") from exc
+
+        _upload_png(client, target_key, output.getvalue())
+    finally:
+        if upload_key:
+            client.delete_object(Bucket=UPLOAD_BUCKET_NAME, Key=upload_key)
 
 
 # ── EC2 콜백 ──────────────────────────────────────────────────
@@ -372,12 +413,14 @@ def run_pipeline(event: dict, run_id: str) -> None:
     resume_from = event.get("resume_from")
     durations_ms = event.get("durations_ms")
     spec_data = event.get("spec")
+    r2 = _r2_client()
 
     target_key = _target_key(job_id)
     draft_key = _draft_key(job_id)
     result_key = _result_key(job_id)
 
     try:
+        _normalize_target(r2, target_key, event.get("target_upload_key"))
         if _should_run("EXTRACTING_FRAMES", resume_from):
             _checkpoint(callback_url, job_id, run_id, "EXTRACTING_FRAMES")
             gif_result = _invoke_gif_processor({

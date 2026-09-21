@@ -9,6 +9,7 @@ class PipelineTriggerCommand:
     target_key: str
     user_id: str
     max_frames: int
+    target_upload_key: str | None = None
     resume_from: str | None = None
     frame_keys: list[str] | None = None
     durations_ms: list[int] | None = None
