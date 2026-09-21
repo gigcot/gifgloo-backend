@@ -6,6 +6,7 @@ from asset.application.services.async_create_asset_from_url_service import Async
 from composition.adapter.outbound.aws.lambda_feasibility_check_adapter import LambdaFeasibilityCheckAdapter
 from composition.adapter.outbound.aws.lambda_pipeline_trigger_adapter import LambdaPipelineTriggerAdapter
 from composition.adapter.outbound.aws.r2_storage_adapter import R2StorageAdapter
+from composition.adapter.outbound.aws.r2_upload_staging_adapter import R2UploadStagingAdapter
 from composition.adapter.outbound.domain_bridges.async_asset_create_adapter import AsyncAssetCreateAdapter
 from composition.adapter.outbound.domain_bridges.async_credit_adapter import AsyncCreditAdapter
 from composition.adapter.outbound.domain_bridges.async_credit_summary_adapter import (
@@ -28,6 +29,7 @@ from composition.adapter.outbound.persistence.sqlalchemy_composition_feedback_re
 from composition.application.services.get_composition_list_service import GetCompositionListService
 from composition.application.services.get_composition_status_service import GetCompositionStatusService
 from composition.application.services.pipeline_callback_service import PipelineCallbackService
+from composition.application.services.prepare_composition_upload_service import PrepareCompositionUploadService
 from composition.application.services.request_composition_service import RequestCompositionService
 from composition.application.services.submit_composition_feedback_service import (
     SubmitCompositionFeedbackService,
@@ -79,11 +81,21 @@ def get_request_composition_service(
         credit=_make_async_credit_adapter(db),
         feasibility=LambdaFeasibilityCheckAdapter(),
         storage=R2StorageAdapter(),
+        upload_staging=R2UploadStagingAdapter(),
         asset_save=_make_async_asset_create_adapter(db),
         pipeline_trigger=LambdaPipelineTriggerAdapter(),
         composition_repo=SqlAlchemyAsyncCompositionRepository(db),
         gate_repo=SqlAlchemyCompositionGateRepository(db),
         transaction=SqlAlchemyAsyncTransaction(db),
+    )
+
+
+def get_prepare_composition_upload_service(
+    db: AsyncSession = Depends(get_async_db),
+) -> PrepareCompositionUploadService:
+    return PrepareCompositionUploadService(
+        user_verification=AsyncUserVerificationAdapter(_make_async_verify_user_service(db)),
+        upload_staging=R2UploadStagingAdapter(),
     )
 
 

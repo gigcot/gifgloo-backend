@@ -28,6 +28,8 @@ class LambdaPipelineTriggerAdapter(PipelineTriggerPort):
             payload["durations_ms"] = command.durations_ms
         if command.spec:
             payload["spec"] = command.spec
+        if command.target_upload_key:
+            payload["target_upload_key"] = command.target_upload_key
 
         session = aioboto3.Session()
         async with session.client("lambda", region_name=self._region) as client:

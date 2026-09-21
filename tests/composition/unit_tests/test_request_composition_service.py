@@ -1,7 +1,11 @@
 import unittest
 from datetime import datetime, timedelta, timezone
 
-from composition.application.ports.inbound.request_composition import RequestCompositionCommand
+from composition.application.ports.inbound.request_composition import (
+    InlineTargetImage,
+    RequestCompositionCommand,
+    StagedTargetImage,
+)
 from composition.application.ports.outbound.aws.feasibility_check_port import FeasibilityCheckResult
 from composition.application.services.request_composition_service import RequestCompositionService
 from composition.domain.aggregates.composition_gate import CompositionGate
@@ -40,11 +44,23 @@ class _Feasibility:
 
 
 class _Storage:
+    def __init__(self):
+        self.uploaded = False
+
     async def upload(self, job_id, category, data):
+        self.uploaded = True
+        return f"compositions/{job_id}/target.png"
+
+    def make_key(self, job_id, category):
         return f"compositions/{job_id}/target.png"
 
     def public_url_for(self, key):
         return f"https://assets.example/{key}"
+
+
+class _UploadStaging:
+    async def resolve(self, command):
+        return f"composition-uploads/{command.user_id}/{command.upload_id}"
 
 
 class _AssetSave:
@@ -126,6 +142,7 @@ class RequestCompositionServiceTest(unittest.IsolatedAsyncioTestCase):
             credit=credit,
             feasibility=feasibility,
             storage=_Storage(),
+            upload_staging=_UploadStaging(),
             asset_save=_AssetSave(),
             pipeline_trigger=pipeline,
             composition_repo=writer,
@@ -142,7 +159,7 @@ class RequestCompositionServiceTest(unittest.IsolatedAsyncioTestCase):
             RequestCompositionCommand(
                 user_id="user-1",
                 gif_url="https://gif.example/source.gif",
-                target_bytes=b"\x89PNG\r\n\x1a\nimage",
+                target=InlineTargetImage(b"\x89PNG\r\n\x1a\nimage"),
             )
         )
 
@@ -161,7 +178,7 @@ class RequestCompositionServiceTest(unittest.IsolatedAsyncioTestCase):
                 RequestCompositionCommand(
                     user_id="user-1",
                     gif_url="https://gif.example/source.gif",
-                    target_bytes=b"\x89PNG\r\n\x1a\nimage",
+                    target=InlineTargetImage(b"\x89PNG\r\n\x1a\nimage"),
                 )
             )
 
@@ -169,6 +186,23 @@ class RequestCompositionServiceTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(writer.job.status, CompositionStatus.FAILED)
         self.assertEqual(transaction.commits, 2)
         self.assertIsNone(gate.gate.active_job_id)
+
+    async def test_staged_upload_is_passed_to_pipeline_without_backend_download(self):
+        pipeline = _Pipeline()
+        service, _, _, _, _, _ = self._service(pipeline)
+
+        await service.execute(
+            RequestCompositionCommand(
+                user_id="user-1",
+                gif_url="https://gif.example/source.gif",
+                target=StagedTargetImage("0e65188c-13a0-4f08-b176-c6f62482db49"),
+            )
+        )
+
+        self.assertEqual(
+            pipeline.commands[0].target_upload_key,
+            "composition-uploads/user-1/0e65188c-13a0-4f08-b176-c6f62482db49",
+        )
 
     async def test_rejects_second_job_without_deducting_credit(self):
         service, credit, feasibility, writer, _, gate = self._service(_Pipeline())
@@ -180,7 +214,7 @@ class RequestCompositionServiceTest(unittest.IsolatedAsyncioTestCase):
                 RequestCompositionCommand(
                     user_id="user-1",
                     gif_url="https://gif.example/source.gif",
-                    target_bytes=b"\x89PNG\r\n\x1a\nimage",
+                    target=InlineTargetImage(b"\x89PNG\r\n\x1a\nimage"),
                 )
             )
 
@@ -201,7 +235,7 @@ class RequestCompositionServiceTest(unittest.IsolatedAsyncioTestCase):
             RequestCompositionCommand(
                 user_id="user-1",
                 gif_url="https://gif.example/source.gif",
-                target_bytes=b"\x89PNG\r\n\x1a\nimage",
+                target=InlineTargetImage(b"\x89PNG\r\n\x1a\nimage"),
             )
         )
 

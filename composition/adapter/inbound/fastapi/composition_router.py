@@ -8,7 +8,12 @@ from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
 from composition.application.ports.inbound.get_composition_status import GetCompositionStatusQuery
-from composition.application.ports.inbound.request_composition import RequestCompositionCommand
+from composition.application.ports.inbound.request_composition import (
+    InlineTargetImage,
+    RequestCompositionCommand,
+    StagedTargetImage,
+)
+from composition.application.ports.outbound.aws.upload_staging_port import PrepareUploadCommand
 from composition.application.ports.inbound.submit_composition_feedback import (
     SubmitCompositionFeedbackCommand,
 )
@@ -21,11 +26,13 @@ from config.composition import (
     get_composition_status_service,
     reconcile_expired_composition_gate,
     get_request_composition_service,
+    get_prepare_composition_upload_service,
     get_submit_composition_feedback_service,
 )
 from composition.application.services.submit_composition_feedback_service import (
     SubmitCompositionFeedbackService,
 )
+from composition.application.services.prepare_composition_upload_service import PrepareCompositionUploadService
 from shared.metrics import (
     SSE_ACTIVE_CONNECTIONS,
     SSE_COMPLETED_TOTAL,
@@ -43,6 +50,17 @@ SECRET_KEY = os.getenv("JWT_SECRET_KEY")
 
 class CompositionFeedbackBody(BaseModel):
     satisfied: bool
+
+
+class PrepareCompositionUploadBody(BaseModel):
+    content_type: str
+    size: int
+
+
+class UploadedCompositionBody(BaseModel):
+    gif_url: str
+    upload_id: str
+    acknowledge_frame_reduction: bool = False
 
 
 def _get_user_id(request: Request) -> str:
@@ -96,8 +114,46 @@ async def request_composition(
         RequestCompositionCommand(
             user_id=user_id,
             gif_url=gif_url,
-            target_bytes=target_bytes,
+            target=InlineTargetImage(target_bytes),
             acknowledge_frame_reduction=acknowledge_frame_reduction,
+        )
+    )
+    return {"composition_job_id": result.composition_job_id}
+
+
+@router.post("/uploads")
+async def prepare_composition_upload(
+    request: Request,
+    body: PrepareCompositionUploadBody,
+    service: PrepareCompositionUploadService = Depends(get_prepare_composition_upload_service),
+):
+    result = await service.execute(
+        PrepareUploadCommand(
+            user_id=_get_user_id(request),
+            content_type=body.content_type,
+            size=body.size,
+        )
+    )
+    return {
+        "upload_id": result.upload_id,
+        "upload_url": result.upload_url,
+        "headers": result.headers,
+        "expires_in_seconds": result.expires_in_seconds,
+    }
+
+
+@router.post("/from-upload")
+async def request_uploaded_composition(
+    request: Request,
+    body: UploadedCompositionBody,
+    service: RequestCompositionService = Depends(get_request_composition_service),
+):
+    result = await service.execute(
+        RequestCompositionCommand(
+            user_id=_get_user_id(request),
+            gif_url=body.gif_url,
+            target=StagedTargetImage(body.upload_id),
+            acknowledge_frame_reduction=body.acknowledge_frame_reduction,
         )
     )
     return {"composition_job_id": result.composition_job_id}
