@@ -3,8 +3,9 @@
 Create a private R2 bucket for temporary composition inputs. The bucket must not
 have a public development URL or custom domain.
 
-Set `R2_UPLOAD_BUCKET_NAME` to its name in both the FastAPI and
-`gifgloo-ai-processor` Lambda environments. The existing R2 API token must have
+Set `R2_UPLOAD_BUCKET_NAME=gifgloo-composition-upload` in the FastAPI environment
+and add a GitHub Actions secret named `R2_UPLOAD_BUCKET_NAME` with the same value
+for the `gifgloo-ai-processor` deployment. The existing R2 API token must have
 object read, write, and delete access to this bucket.
 
 Apply [`r2-composition-upload-cors.json`](./r2-composition-upload-cors.json) to
