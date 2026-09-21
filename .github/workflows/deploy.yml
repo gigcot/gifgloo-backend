@@ -53,6 +53,7 @@ jobs:
               - 'tests/composition/unit_tests/**'
               - 'tests/integration_tests/**'
               - 'tests/payment/unit_tests/**'
+              - 'tests/user/unit_tests/**'
             lambda_ai:
               - 'lambda/deploy.sh'
               - 'lambda/ai_processor/**'
@@ -125,6 +126,7 @@ jobs:
         run: |
           python -m compileall -q \
             main.py \
+            admin \
             asset \
             audit \
             composition \
@@ -139,7 +141,8 @@ jobs:
             tests/api_tests \
             tests/composition/unit_tests \
             tests/integration_tests \
-            tests/payment/unit_tests
+            tests/payment/unit_tests \
+            tests/user/unit_tests
 
       - name: Run unit tests
         run: |
@@ -147,6 +150,7 @@ jobs:
           python -m unittest discover -s user/unit_tests -p 'test_*.py'
           python -m unittest discover -s tests/composition/unit_tests -p 'test_*.py'
           python -m unittest discover -s tests/payment/unit_tests -p 'test_*.py'
+          python -m unittest discover -s tests/user/unit_tests -p 'test_*.py'
 
       - name: Run API smoke tests
         if: needs.changes.outputs.app == 'true'
