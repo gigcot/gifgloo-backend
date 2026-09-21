@@ -1,3 +1,5 @@
+from collections.abc import Callable
+
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.exc import IntegrityError
 
@@ -47,10 +49,10 @@ class AdminOpsService:
     def __init__(
         self,
         session: AsyncSession,
-        toss_pay_gateway: TossPayGatewayPort,
+        toss_pay_gateway_factory: Callable[[], TossPayGatewayPort],
     ):
         self._session = session
-        self._toss_pay_gateway = toss_pay_gateway
+        self._toss_pay_gateway_factory = toss_pay_gateway_factory
         self._query = SqlAlchemyAdminOpsQuery(session)
 
     async def recheck_payment(self, admin_user_id: str, payment_id: str) -> dict:
@@ -61,7 +63,7 @@ class AdminOpsService:
         if payment.provider != PaymentProvider.TOSS_PAY:
             raise BusinessRuleException("토스페이 결제만 재조회할 수 있습니다")
 
-        verified = await self._toss_pay_gateway.get_status(
+        verified = await self._toss_pay_gateway_factory().get_status(
             GetTossPayStatusCommand(order_id=payment.order_id)
         )
         processed = None
