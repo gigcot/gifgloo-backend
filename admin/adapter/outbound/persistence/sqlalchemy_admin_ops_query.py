@@ -8,9 +8,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from admin.adapter.outbound.persistence.models import AdminAuditLogModel
 from composition.adapter.outbound.persistence.models import CompositionJobModel
 from credit_account.adapter.outbound.models import (
-    CreditAccountModel,
+    CreditLotModel,
     CreditTransactionModel,
 )
+from credit_account.domain.aggregates.credit_account import CreditAccount
 from credit_account.domain.value_objects.credit_source_type import CreditSourceType
 from credit_account.domain.value_objects.transaction_type import TransactionType
 from composition.domain.value_objects.composition_status import CompositionStatus
@@ -106,7 +107,8 @@ class SqlAlchemyAdminOpsQuery:
         if user is None:
             return None
 
-        credit_account = await self._session.get(CreditAccountModel, user.id)
+        now = datetime.now(timezone.utc)
+        credit_balance = await self._available_credit_balance(user.id, now)
         payments = (
             await self._session.execute(
                 select(PaymentModel)
@@ -126,6 +128,14 @@ class SqlAlchemyAdminOpsQuery:
                 .limit(50)
             )
         ).scalars().all()
+        credit_lots = (
+            await self._session.execute(
+                select(CreditLotModel)
+                .where(CreditLotModel.account_user_id == user.id)
+                .order_by(CreditLotModel.created_at.desc())
+                .limit(50)
+            )
+        ).scalars().all()
 
         return {
             "admin_user_id": admin_user_id,
@@ -136,7 +146,10 @@ class SqlAlchemyAdminOpsQuery:
                 "role": user.role,
                 "status": user.status,
                 "created_at": _iso(user.created_at),
-                "credit_balance": credit_account.balance if credit_account else 0,
+                "credit_balance": credit_balance,
+                "credit_remaining_uses": (
+                    credit_balance // CreditAccount.composition_cost
+                ),
             },
             "payments": [
                 self._payment_dict(payment, payment.id in payment_credit_sources)
@@ -145,6 +158,10 @@ class SqlAlchemyAdminOpsQuery:
             "credit_transactions": [
                 self._credit_transaction_dict(transaction)
                 for transaction in credit_transactions
+            ],
+            "credit_lots": [
+                self._credit_lot_dict(lot, now)
+                for lot in credit_lots
             ],
         }
 
@@ -159,8 +176,24 @@ class SqlAlchemyAdminOpsQuery:
         return await self._session.get(UserModel, user_id) is not None
 
     async def current_balance(self, user_id: str) -> int:
-        credit_account = await self._session.get(CreditAccountModel, user_id)
-        return credit_account.balance if credit_account else 0
+        return await self._available_credit_balance(
+            user_id,
+            datetime.now(timezone.utc),
+        )
+
+    async def _available_credit_balance(
+        self,
+        user_id: str,
+        now: datetime,
+    ) -> int:
+        balance = await self._session.scalar(
+            select(func.coalesce(func.sum(CreditLotModel.remaining_amount), 0)).where(
+                CreditLotModel.account_user_id == user_id,
+                CreditLotModel.remaining_amount > 0,
+                CreditLotModel.expires_at > now,
+            )
+        )
+        return balance or 0
 
     async def find_audit_by_idempotency_key(
         self,
@@ -259,13 +292,40 @@ class SqlAlchemyAdminOpsQuery:
         }
 
     def _credit_transaction_dict(self, transaction: CreditTransactionModel) -> dict:
+        positive_types = {
+            TransactionType.CHARGE.value,
+            TransactionType.REFUND.value,
+        }
+        signed_amount = (
+            transaction.amount
+            if transaction.transaction_type in positive_types
+            else -transaction.amount
+        )
         return {
             "id": transaction.id,
             "user_id": transaction.account_user_id,
             "amount": transaction.amount,
+            "signed_amount": signed_amount,
+            "uses": transaction.amount // CreditAccount.composition_cost,
             "transaction_type": transaction.transaction_type,
             "source_type": transaction.source_type,
             "source_id": transaction.source_id,
             "reason": transaction.reason,
             "created_at": _iso(transaction.created_at),
+        }
+
+    def _credit_lot_dict(self, lot: CreditLotModel, now: datetime) -> dict:
+        expired = lot.expires_at <= now
+        available_amount = 0 if expired else lot.remaining_amount
+        return {
+            "id": lot.id,
+            "source_type": lot.source_type,
+            "source_id": lot.source_id,
+            "granted_amount": lot.granted_amount,
+            "granted_uses": lot.granted_amount // CreditAccount.composition_cost,
+            "remaining_amount": available_amount,
+            "remaining_uses": available_amount // CreditAccount.composition_cost,
+            "expires_at": _iso(lot.expires_at),
+            "expired": expired,
+            "created_at": _iso(lot.created_at),
         }

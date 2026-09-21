@@ -84,7 +84,7 @@ def get_admin_ops_query(
 def get_admin_ops_service(
     db: AsyncSession = Depends(get_async_db),
 ) -> AdminOpsService:
-    return AdminOpsService(db, make_toss_pay_gateway())
+    return AdminOpsService(db, make_toss_pay_gateway)
 
 
 @router.get("/me")
