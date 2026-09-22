@@ -269,8 +269,8 @@ jobs:
           username: ${{ secrets.EC2_USER }}
           key: ${{ secrets.EC2_SSH_KEY }}
           envs: R2_UPLOAD_BUCKET_NAME
-          script_stop: true
           script: |
+            set -euo pipefail
             cd ~/gifgloo-backend
             if [ -z "$R2_UPLOAD_BUCKET_NAME" ]; then
               echo "R2_UPLOAD_BUCKET_NAME is required"
