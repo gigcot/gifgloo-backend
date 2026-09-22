@@ -1651,7 +1651,7 @@
       },
       "targets": [
         {
-          "expr": "{job=~\"nginx-access|nginx-error\"} |~ \"upstream timed out|timed out|connect\\\\(\\\\) failed|status=50[0-9]| 50[0-9] \"",
+          "expr": "{job=~\"nginx-access|nginx-error\"} != \"api-loadtest.gifgloo.com\" |~ \"upstream timed out|timed out|connect\\\\(\\\\) failed|status=50[0-9]| 50[0-9] \"",
           "refId": "A"
         }
       ],
