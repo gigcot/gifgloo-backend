@@ -3,11 +3,12 @@
 Create a private R2 bucket for temporary composition inputs. The bucket must not
 have a public development URL or custom domain.
 
-Add a GitHub Actions secret named `R2_UPLOAD_BUCKET_NAME` with the value
-`gifgloo-composition-upload`. The backend deployment syncs it to the EC2 `.env`,
-and the `gifgloo-ai-processor` deployment passes the same value to Lambda. The
-existing R2 API token must have object read, write, and delete access to this
-bucket.
+Create an R2 Object Read & Write API token scoped to both the primary result
+bucket and `gifgloo-composition-upload`. Set its credentials in the
+`R2_ACCESS_KEY_ID` and `R2_SECRET_ACCESS_KEY` GitHub Actions secrets, and set
+`R2_UPLOAD_BUCKET_NAME` to `gifgloo-composition-upload`. The backend deployment
+syncs all three values to the EC2 `.env`, and the `gifgloo-ai-processor`
+deployment passes the same values to Lambda.
 
 Apply [`r2-composition-upload-cors.json`](./r2-composition-upload-cors.json) to
 the bucket. Add local and preview origins only while testing; production should
