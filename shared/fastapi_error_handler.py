@@ -17,6 +17,7 @@ from shared.exceptions import (
     ConfirmationRequiredException,
     CompositionUnavailableException,
 )
+from shared.request_context import current_request_id
 
 STATUS_MAP: dict[type[DomainException], int] = {
     NotFoundException: 404,
@@ -74,7 +75,12 @@ def register_error_handlers(app: FastAPI) -> None:
     @app.exception_handler(Exception)
     async def unhandled_exception_handler(request: Request, exc: Exception):
         logger = logging.getLogger(__name__)
-        logger.exception("Unhandled exception on %s %s", request.method, request.url.path)
+        logger.exception(
+            "Unhandled exception request_id=%s method=%s path=%s",
+            current_request_id.get(),
+            request.method,
+            request.url.path,
+        )
         return JSONResponse(
             status_code=500,
             content={

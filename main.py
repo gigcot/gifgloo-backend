@@ -9,12 +9,14 @@ load_dotenv(".env")
 
 from config.payment_settings import validate_payment_config
 from shared.fastapi_error_handler import register_error_handlers
+from shared.logging_config import configure_file_logging
 from shared.metrics import (
     metrics_response,
     mark_metrics_process_dead,
     monitor_runtime_metrics,
     record_http_metrics,
 )
+from shared.request_context import RequestContextMiddleware
 import user.adapter.outbound.persistence.models  # noqa: F401
 import composition.adapter.outbound.persistence.models  # noqa: F401
 import asset.adapter.outbound.models  # noqa: F401
@@ -45,8 +47,11 @@ async def lifespan(app: FastAPI):
         mark_metrics_process_dead()
 
 
+configure_file_logging()
+
 app = FastAPI(lifespan=lifespan)
 register_error_handlers(app)
+app.add_middleware(RequestContextMiddleware)
 
 CORS_ORIGINS = os.getenv("CORS_ORIGINS").split(",")
 
@@ -56,7 +61,7 @@ app.add_middleware(
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
-    expose_headers=["Retry-After"],
+    expose_headers=["Retry-After", "X-Request-ID"],
 )
 
 

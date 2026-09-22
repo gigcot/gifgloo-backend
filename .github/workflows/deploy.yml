@@ -227,6 +227,8 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: read
+    env:
+      R2_UPLOAD_BUCKET_NAME: ${{ secrets.R2_UPLOAD_BUCKET_NAME }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -266,9 +268,19 @@ jobs:
           host: ${{ secrets.EC2_HOST }}
           username: ${{ secrets.EC2_USER }}
           key: ${{ secrets.EC2_SSH_KEY }}
+          envs: R2_UPLOAD_BUCKET_NAME
           script_stop: true
           script: |
             cd ~/gifgloo-backend
+            if [ -z "$R2_UPLOAD_BUCKET_NAME" ]; then
+              echo "R2_UPLOAD_BUCKET_NAME is required"
+              exit 1
+            fi
+            if grep -q '^R2_UPLOAD_BUCKET_NAME=' .env; then
+              sed -i "s|^R2_UPLOAD_BUCKET_NAME=.*|R2_UPLOAD_BUCKET_NAME=$R2_UPLOAD_BUCKET_NAME|" .env
+            else
+              printf '\nR2_UPLOAD_BUCKET_NAME=%s\n' "$R2_UPLOAD_BUCKET_NAME" >> .env
+            fi
             if [ -n "${{ secrets.GHCR_USER }}" ] && [ -n "${{ secrets.GHCR_TOKEN }}" ]; then
               echo "${{ secrets.GHCR_TOKEN }}" | docker login ghcr.io -u "${{ secrets.GHCR_USER }}" --password-stdin
             fi
@@ -280,6 +292,7 @@ jobs:
             docker compose -f docker-compose.prod.yml run --rm --no-deps app alembic upgrade head
             docker compose -f docker-compose.prod.yml up -d app
             docker compose --env-file .env -f monitoring/docker-compose.yml up -d
+            sudo install -o root -g root -m 644 ops/nginx/request-id-log-format.conf /etc/nginx/conf.d/gifgloo-request-id-log.conf
             sudo nginx -t
             sudo systemctl reload nginx
             docker image prune -f
