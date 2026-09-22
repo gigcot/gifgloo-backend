@@ -55,6 +55,7 @@ jobs:
               - 'tests/payment/unit_tests/**'
               - 'tests/user/unit_tests/**'
             lambda_ai:
+              - '.github/workflows/deploy.yml'
               - 'lambda/deploy.sh'
               - 'lambda/ai_processor/**'
             lambda_gif:
