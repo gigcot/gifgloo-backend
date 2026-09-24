@@ -3,6 +3,7 @@ from dataclasses import dataclass
 
 from user.domain.value_objects.social_account import SocialProvider
 from user.domain.value_objects.signup_consent import SignupConsent
+from user.domain.value_objects.acquisition import Acquisition
 
 
 @dataclass
@@ -10,6 +11,7 @@ class SocialLoginCommand:
     provider: SocialProvider
     code: str
     signup_consent: SignupConsent
+    acquisition: Acquisition | None = None
 
 
 @dataclass

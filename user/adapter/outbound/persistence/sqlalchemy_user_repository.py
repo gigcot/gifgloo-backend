@@ -9,6 +9,7 @@ from user.domain.aggregates.user import User, UserRole, UserStatus
 from user.domain.value_objects.email import Email
 from user.domain.value_objects.social_account import SocialAccount, SocialProvider
 from user.domain.value_objects.signup_consent import SignupConsent
+from user.domain.value_objects.acquisition import Acquisition
 
 
 class SqlAlchemyUserRepository(UserRepositoryPort):
@@ -42,6 +43,10 @@ class SqlAlchemyUserRepository(UserRepositoryPort):
                 role=user.role.value,
                 status=user.status.value,
                 created_at=user.created_at,
+                acquisition_source=user.acquisition.source if user.acquisition else None,
+                acquisition_medium=user.acquisition.medium if user.acquisition else None,
+                acquisition_campaign=user.acquisition.campaign if user.acquisition else None,
+                acquisition_content=user.acquisition.content if user.acquisition else None,
                 terms_version=(
                     user.signup_consent.terms_version if user.signup_consent else None
                 ),
@@ -85,6 +90,12 @@ class SqlAlchemyUserRepository(UserRepositoryPort):
         user.role = UserRole(model.role)
         user.status = UserStatus(model.status)
         user.created_at = model.created_at
+        user.acquisition = Acquisition(
+            source=model.acquisition_source,
+            medium=model.acquisition_medium,
+            campaign=model.acquisition_campaign,
+            content=model.acquisition_content,
+        ) if any((model.acquisition_source, model.acquisition_medium, model.acquisition_campaign, model.acquisition_content)) else None
         user.signup_consent = (
             SignupConsent(
                 terms_version=model.terms_version,
