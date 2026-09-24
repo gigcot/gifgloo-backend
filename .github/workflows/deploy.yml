@@ -38,6 +38,7 @@ jobs:
               - 'migrations/**'
               - 'requirements.txt'
               - 'main.py'
+              - 'admin/**'
               - 'asset/**'
               - 'audit/**'
               - 'composition/**'
@@ -52,7 +53,9 @@ jobs:
               - 'tests/composition/unit_tests/**'
               - 'tests/integration_tests/**'
               - 'tests/payment/unit_tests/**'
+              - 'tests/user/unit_tests/**'
             lambda_ai:
+              - '.github/workflows/deploy.yml'
               - 'lambda/deploy.sh'
               - 'lambda/ai_processor/**'
             lambda_gif:
@@ -124,6 +127,7 @@ jobs:
         run: |
           python -m compileall -q \
             main.py \
+            admin \
             asset \
             audit \
             composition \
@@ -138,7 +142,8 @@ jobs:
             tests/api_tests \
             tests/composition/unit_tests \
             tests/integration_tests \
-            tests/payment/unit_tests
+            tests/payment/unit_tests \
+            tests/user/unit_tests
 
       - name: Run unit tests
         run: |
@@ -146,6 +151,7 @@ jobs:
           python -m unittest discover -s user/unit_tests -p 'test_*.py'
           python -m unittest discover -s tests/composition/unit_tests -p 'test_*.py'
           python -m unittest discover -s tests/payment/unit_tests -p 'test_*.py'
+          python -m unittest discover -s tests/user/unit_tests -p 'test_*.py'
 
       - name: Run API smoke tests
         if: needs.changes.outputs.app == 'true'
@@ -222,6 +228,10 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: read
+    env:
+      R2_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+      R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+      R2_UPLOAD_BUCKET_NAME: ${{ secrets.R2_UPLOAD_BUCKET_NAME }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -261,9 +271,26 @@ jobs:
           host: ${{ secrets.EC2_HOST }}
           username: ${{ secrets.EC2_USER }}
           key: ${{ secrets.EC2_SSH_KEY }}
-          script_stop: true
+          envs: R2_ACCESS_KEY_ID,R2_SECRET_ACCESS_KEY,R2_UPLOAD_BUCKET_NAME
           script: |
+            set -euo pipefail
             cd ~/gifgloo-backend
+            sync_env() {
+              key="$1"
+              value="$2"
+              if [ -z "$value" ]; then
+                echo "$key is required"
+                exit 1
+              fi
+              env_tmp="$(mktemp)"
+              grep -v "^${key}=" .env > "$env_tmp" || true
+              printf '%s=%s\n' "$key" "$value" >> "$env_tmp"
+              chmod --reference=.env "$env_tmp"
+              mv "$env_tmp" .env
+            }
+            sync_env R2_ACCESS_KEY_ID "$R2_ACCESS_KEY_ID"
+            sync_env R2_SECRET_ACCESS_KEY "$R2_SECRET_ACCESS_KEY"
+            sync_env R2_UPLOAD_BUCKET_NAME "$R2_UPLOAD_BUCKET_NAME"
             if [ -n "${{ secrets.GHCR_USER }}" ] && [ -n "${{ secrets.GHCR_TOKEN }}" ]; then
               echo "${{ secrets.GHCR_TOKEN }}" | docker login ghcr.io -u "${{ secrets.GHCR_USER }}" --password-stdin
             fi
@@ -275,6 +302,7 @@ jobs:
             docker compose -f docker-compose.prod.yml run --rm --no-deps app alembic upgrade head
             docker compose -f docker-compose.prod.yml up -d app
             docker compose --env-file .env -f monitoring/docker-compose.yml up -d
+            sudo install -o root -g root -m 644 ops/nginx/request-id-log-format.conf /etc/nginx/conf.d/gifgloo-request-id-log.conf
             sudo nginx -t
             sudo systemctl reload nginx
             docker image prune -f
