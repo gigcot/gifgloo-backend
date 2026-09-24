@@ -17,3 +17,7 @@ class UserModel(Base):
     privacy_version = Column(String, nullable=True)
     is_fourteen_or_older = Column(Boolean, nullable=False, default=False)
     consented_at = Column(DateTime(timezone=True), nullable=True)
+    acquisition_source = Column(String(100), nullable=True)
+    acquisition_medium = Column(String(100), nullable=True)
+    acquisition_campaign = Column(String(100), nullable=True)
+    acquisition_content = Column(String(100), nullable=True)

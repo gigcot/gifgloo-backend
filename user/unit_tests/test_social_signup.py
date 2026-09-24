@@ -23,6 +23,7 @@ from user.domain.value_objects.signup_consent import (  # noqa: E402
     SignupConsent,
 )
 from user.domain.value_objects.social_account import SocialProvider  # noqa: E402
+from user.domain.value_objects.acquisition import Acquisition  # noqa: E402
 
 
 class OAuthSignupTest(unittest.TestCase):
@@ -74,6 +75,7 @@ class OAuthSignupTest(unittest.TestCase):
             "is_fourteen_or_older": True,
             "agreed_to_terms": True,
             "agreed_to_privacy": True,
+            "acquisition": {"source": "friend", "campaign": "exp001"},
         })
         self.assertEqual(response.status_code, 200)
         state = parse_qs(urlsplit(response.json()["authorization_url"]).query)["state"][0]
@@ -83,6 +85,18 @@ class OAuthSignupTest(unittest.TestCase):
         self.assertEqual(result.headers["location"], "https://gifgloo.test/callback?is_new_user=true")
         self.assertEqual(len(self.login_calls), 1)
         self.assertTrue(self.login_calls[0].signup_consent.is_fourteen_or_older)
+        self.assertEqual(self.login_calls[0].acquisition, Acquisition(source="friend", campaign="exp001"))
+
+    def test_acquisition_length_is_bounded(self):
+        result = self.client.post("/oauth/google/start", json={
+            "terms_version": CURRENT_TERMS_VERSION,
+            "privacy_version": CURRENT_PRIVACY_VERSION,
+            "is_fourteen_or_older": True,
+            "agreed_to_terms": True,
+            "agreed_to_privacy": True,
+            "acquisition": {"campaign": "x" * 101},
+        })
+        self.assertEqual(result.status_code, 422)
 
 
 class SocialSignupCreditTest(unittest.TestCase):
@@ -118,12 +132,15 @@ class SocialSignupCreditTest(unittest.TestCase):
         credit_repo = CreditRepo()
         service = SocialLoginService(SocialProviderStub(), user_repo, CreditInit(credit_repo))
         consent = SignupConsent.record(CURRENT_TERMS_VERSION, CURRENT_PRIVACY_VERSION, True)
-        command = SocialLoginCommand(provider=SocialProvider.GOOGLE, code="code", signup_consent=consent)
+        command = SocialLoginCommand(provider=SocialProvider.GOOGLE, code="code", signup_consent=consent, acquisition=Acquisition(campaign="exp001"))
 
         self.assertTrue(service.execute(command).is_new_user)
         self.assertEqual(user_repo.user.signup_consent, consent)
         self.assertEqual(credit_repo.accounts[0].available_balance(), 20)
+        self.assertEqual(user_repo.user.acquisition.campaign, "exp001")
+        command.acquisition = Acquisition(campaign="exp002")
         self.assertFalse(service.execute(command).is_new_user)
+        self.assertEqual(user_repo.user.acquisition.campaign, "exp001")
         self.assertEqual(len(credit_repo.accounts), 1)
 
 

@@ -34,7 +34,7 @@ class SocialLoginService(SocialLoginPort):
         is_new_user = user is None
         if is_new_user:
             email = Email(social_info.email) if social_info.email else None
-            user = User(social_account=social_account, email=email)
+            user = User(social_account=social_account, email=email, acquisition=command.acquisition)
             user.signup_consent = command.signup_consent
             self._user_repo.save(user)
             self._credit_account_init.init_account(user.id)

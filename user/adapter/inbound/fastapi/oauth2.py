@@ -2,13 +2,15 @@ import os
 import hmac
 import secrets
 from datetime import datetime, timedelta, timezone
+from dataclasses import asdict
+from typing import Annotated
 from urllib.parse import urlencode
 import jwt
 from dotenv import load_dotenv
 from fastapi import APIRouter, Depends
 from fastapi import Request
 from fastapi.responses import JSONResponse, RedirectResponse, Response
-from pydantic import BaseModel
+from pydantic import BaseModel, StringConstraints
 
 from config.user import (
     get_google_social_login_service,
@@ -21,6 +23,7 @@ from user.application.services.review_login_service import ReviewLoginService
 from user.application.services.social_login_service import SocialLoginService
 from user.domain.value_objects.social_account import SocialProvider
 from user.domain.value_objects.signup_consent import SignupConsent
+from user.domain.value_objects.acquisition import Acquisition
 from shared.exceptions import AuthenticationException, BusinessRuleException
 
 load_dotenv(".env")
@@ -72,12 +75,23 @@ class ReviewLoginBody(BaseModel):
     password: str
 
 
+AcquisitionLabel = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=100)]
+
+
+class AcquisitionCommand(BaseModel):
+    source: AcquisitionLabel | None = None
+    medium: AcquisitionLabel | None = None
+    campaign: AcquisitionLabel | None = None
+    content: AcquisitionLabel | None = None
+
+
 class OAuthConsentBody(BaseModel):
     terms_version: str
     privacy_version: str
     is_fourteen_or_older: bool
     agreed_to_terms: bool
     agreed_to_privacy: bool
+    acquisition: AcquisitionCommand | None = None
 
 
 def _start_social_login(provider: SocialProvider, body: OAuthConsentBody) -> JSONResponse:
@@ -94,6 +108,7 @@ def _start_social_login(provider: SocialProvider, body: OAuthConsentBody) -> JSO
             "terms_version": body.terms_version,
             "privacy_version": body.privacy_version,
             "is_fourteen_or_older": body.is_fourteen_or_older,
+            "acquisition": body.acquisition.model_dump() if body.acquisition else None,
             "nonce": secrets.token_urlsafe(16),
             "exp": datetime.now(timezone.utc) + timedelta(minutes=10),
         },
@@ -127,7 +142,7 @@ def _start_social_login(provider: SocialProvider, body: OAuthConsentBody) -> JSO
     return response
 
 
-def _get_signup_consent(request: Request, state: str, provider: SocialProvider) -> SignupConsent:
+def _get_signup_context(request: Request, state: str, provider: SocialProvider) -> tuple[SignupConsent, Acquisition | None]:
     saved_state = request.cookies.get(OAUTH_STATE_COOKIE)
     if saved_state is None or not hmac.compare_digest(saved_state, state):
         raise AuthenticationException("가입 동의를 확인할 수 없습니다")
@@ -137,11 +152,17 @@ def _get_signup_consent(request: Request, state: str, provider: SocialProvider) 
         raise AuthenticationException("가입 동의가 만료되었습니다") from exc
     if payload["provider"] != provider.value:
         raise AuthenticationException("로그인 요청이 일치하지 않습니다")
-    return SignupConsent.record(
+    consent = SignupConsent.record(
         terms_version=payload["terms_version"],
         privacy_version=payload["privacy_version"],
         is_fourteen_or_older=payload["is_fourteen_or_older"],
     )
+    acquisition = None
+    if "acquisition" in payload and payload["acquisition"] is not None:
+        acquisition = Acquisition(**payload["acquisition"])
+        if not any(asdict(acquisition).values()):
+            acquisition = None
+    return consent, acquisition
 
 
 @router.post("/review-login", status_code=204)
@@ -183,8 +204,8 @@ def kakao_callback(
     request: Request,
     service: SocialLoginService = Depends(get_kakao_social_login_service),
 ):
-    consent = _get_signup_consent(request, state, SocialProvider.KAKAO)
-    result = service.execute(SocialLoginCommand(provider=SocialProvider.KAKAO, code=code, signup_consent=consent))
+    consent, acquisition = _get_signup_context(request, state, SocialProvider.KAKAO)
+    result = service.execute(SocialLoginCommand(provider=SocialProvider.KAKAO, code=code, signup_consent=consent, acquisition=acquisition))
     return _redirect_with_cookie(result.user_id, result.is_new_user)
 
 
@@ -202,6 +223,6 @@ def google_callback(
     request: Request,
     service: SocialLoginService = Depends(get_google_social_login_service),
 ):
-    consent = _get_signup_consent(request, state, SocialProvider.GOOGLE)
-    result = service.execute(SocialLoginCommand(provider=SocialProvider.GOOGLE, code=code, signup_consent=consent))
+    consent, acquisition = _get_signup_context(request, state, SocialProvider.GOOGLE)
+    result = service.execute(SocialLoginCommand(provider=SocialProvider.GOOGLE, code=code, signup_consent=consent, acquisition=acquisition))
     return _redirect_with_cookie(result.user_id, result.is_new_user)

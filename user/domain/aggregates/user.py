@@ -8,6 +8,7 @@ import uuid
 from user.domain.value_objects.email import Email
 from user.domain.value_objects.social_account import SocialAccount
 from user.domain.value_objects.signup_consent import SignupConsent
+from user.domain.value_objects.acquisition import Acquisition
 from shared.exceptions import InvalidStateException
 
 
@@ -28,12 +29,14 @@ class User:
         email: Optional[Email] = None,
         role: UserRole = UserRole.USER,
         signup_consent: Optional[SignupConsent] = None,
+        acquisition: Acquisition | None = None,
     ):
         self.id: str = str(uuid.uuid4())
         self.social_account: SocialAccount = social_account
         self.email: Optional[Email] = email
         self.role: UserRole = role
         self.signup_consent: Optional[SignupConsent] = signup_consent
+        self.acquisition = acquisition
         self.status: UserStatus = UserStatus.ACTIVE
         self.created_at: datetime = datetime.now(timezone.utc)
 

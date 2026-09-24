@@ -6,6 +6,7 @@ from user.domain.aggregates.user import User, UserRole, UserStatus
 from user.domain.value_objects.email import Email
 from user.domain.value_objects.social_account import SocialAccount, SocialProvider
 from user.domain.value_objects.signup_consent import SignupConsent
+from user.domain.value_objects.acquisition import Acquisition
 
 
 class SqlAlchemyAsyncUserRepository(AsyncUserRepository):
@@ -26,6 +27,12 @@ class SqlAlchemyAsyncUserRepository(AsyncUserRepository):
         user.role = UserRole(model.role)
         user.status = UserStatus(model.status)
         user.created_at = model.created_at
+        user.acquisition = Acquisition(
+            source=model.acquisition_source,
+            medium=model.acquisition_medium,
+            campaign=model.acquisition_campaign,
+            content=model.acquisition_content,
+        ) if any((model.acquisition_source, model.acquisition_medium, model.acquisition_campaign, model.acquisition_content)) else None
         user.signup_consent = (
             SignupConsent(
                 terms_version=model.terms_version,
