@@ -102,3 +102,14 @@ class SqlAlchemyAsyncCompositionRepository(AsyncCompositionRepository):
         )
         models = (await self._session.scalars(statement)).all()
         return [_to_domain(model) for model in models]
+
+    async def exists_completed_by_user_id(self, user_id: str) -> bool:
+        statement = (
+            select(CompositionJobModel.id)
+            .where(
+                CompositionJobModel.user_id == user_id,
+                CompositionJobModel.status == CompositionStatus.COMPLETED.value,
+            )
+            .limit(1)
+        )
+        return (await self._session.execute(statement)).scalar_one_or_none() is not None

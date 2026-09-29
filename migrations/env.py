@@ -10,6 +10,7 @@ import composition.adapter.outbound.persistence.models  # noqa: F401
 import credit_account.adapter.outbound.models  # noqa: F401
 import payment.adapter.outbound.persistence.models  # noqa: F401
 import user.adapter.outbound.persistence.models  # noqa: F401
+import experiment.adapter.outbound.persistence.models  # noqa: F401
 from config.database import Base
 
 config = context.config

@@ -23,6 +23,7 @@ import asset.adapter.outbound.models  # noqa: F401
 import credit_account.adapter.outbound.models  # noqa: F401
 import payment.adapter.outbound.persistence.models  # noqa: F401
 import admin.adapter.outbound.persistence.models  # noqa: F401
+import experiment.adapter.outbound.persistence.models  # noqa: F401
 
 from composition.adapter.inbound.fastapi.composition_router import router as composition_router
 from composition.adapter.inbound.fastapi.composition_internal_router import router as composition_internal_router
@@ -32,6 +33,7 @@ from asset.adapter.inbound.fastapi.asset_router import router as asset_router
 from credit_account.adapter.inbound.fastapi.credit_account_router import router as credit_router
 from payment.adapter.inbound.fastapi.payment_router import router as payment_router
 from admin.adapter.inbound.fastapi.admin_router import router as admin_router
+from experiment.adapter.inbound.fastapi.experiment_router import router as experiment_router
 
 
 @asynccontextmanager
@@ -79,3 +81,4 @@ app.include_router(asset_router)
 app.include_router(credit_router)
 app.include_router(payment_router)
 app.include_router(admin_router)
+app.include_router(experiment_router)

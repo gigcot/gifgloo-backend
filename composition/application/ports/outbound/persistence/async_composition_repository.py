@@ -24,3 +24,7 @@ class AsyncCompositionRepository(ABC):
         offset: int,
     ) -> list[CompositionJob]:
         pass
+
+    @abstractmethod
+    async def exists_completed_by_user_id(self, user_id: str) -> bool:
+        pass
