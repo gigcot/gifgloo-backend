@@ -12,6 +12,7 @@ bin/
 # 환경 변수 및 설정 (보안)
 .env
 .env.loadtest
+.env*
 .flaskenv
 .secrets
 
@@ -50,6 +51,11 @@ cc_prompt/
 tests/
 AGENTS.md
 portfolio-export/
+
+# Local production verification runner
+scripts/__init__.py
+scripts/production_composition_runner.py
+scripts/production_composition_cases.example.json
 ##
 .DS_store
 .pem

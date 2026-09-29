@@ -5,4 +5,5 @@ class CreditSourceType(Enum):
     PAYMENT = "PAYMENT"
     ADMIN = "ADMIN"
     COMPOSITION = "COMPOSITION"
+    EXPERIMENT = "EXPERIMENT"
     LOT = "LOT"
