@@ -36,7 +36,7 @@ class SubmitExperimentSurveyBody(BaseModel):
     actual_actions: list[ActualAction] = Field(min_length=1)
     intended_context_other: str | None = Field(default=None, max_length=500)
     actual_action_other: str | None = Field(default=None, max_length=500)
-    non_external_use_reason: NonExternalUseReason | None = None
+    non_external_use_reasons: list[NonExternalUseReason] = Field(default_factory=list)
     non_external_use_reason_other: str | None = Field(default=None, max_length=500)
     next_context: str | None = Field(default=None, max_length=500)
 
@@ -83,7 +83,7 @@ async def submit_exp_001_survey(
             actual_actions=tuple(body.actual_actions),
             intended_context_other=body.intended_context_other,
             actual_action_other=body.actual_action_other,
-            non_external_use_reason=body.non_external_use_reason,
+            non_external_use_reasons=tuple(body.non_external_use_reasons),
             non_external_use_reason_other=body.non_external_use_reason_other,
             next_context=body.next_context,
         )

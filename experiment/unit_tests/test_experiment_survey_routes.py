@@ -88,7 +88,7 @@ class ExperimentSurveyRoutesTest(unittest.TestCase):
             json={
                 "intended_context": "group_chat",
                 "actual_actions": ["saved"],
-                "non_external_use_reason": "personal_keep",
+                "non_external_use_reasons": ["personal_keep", "rights_concern"],
                 "next_context": "친구 단톡방",
             },
         )
@@ -96,6 +96,10 @@ class ExperimentSurveyRoutesTest(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.json(), {"submitted": True})
         self.assertEqual(self.submit_service.command.user_id, "user-1")
+        self.assertEqual(
+            tuple(reason.value for reason in self.submit_service.command.non_external_use_reasons),
+            ("personal_keep", "rights_concern"),
+        )
         self.assertEqual(
             self.submit_service.command.actual_actions[0].value,
             "saved",
@@ -107,7 +111,7 @@ class ExperimentSurveyRoutesTest(unittest.TestCase):
             json={
                 "intended_context": "group_chat",
                 "actual_actions": [],
-                "non_external_use_reason": "personal_keep",
+                "non_external_use_reasons": ["personal_keep"],
             },
         )
 
@@ -124,7 +128,7 @@ class ExperimentSurveyRoutesTest(unittest.TestCase):
             json={
                 "intended_context": "group_chat",
                 "actual_actions": ["saved"],
-                "non_external_use_reason": "personal_keep",
+                "non_external_use_reasons": ["personal_keep"],
             },
         )
 
@@ -136,6 +140,17 @@ class ExperimentSurveyRoutesTest(unittest.TestCase):
         response = self.client.get("/experiments/exp-001/survey")
 
         self.assertEqual(response.status_code, 401)
+
+    def test_reasons_reject_string_and_unknown_values(self):
+        for reasons in ("personal_keep", ["unknown_reason"]):
+            with self.subTest(reasons=reasons):
+                response = self.client.post("/experiments/exp-001/survey", json={
+                    "intended_context": "group_chat",
+                    "actual_actions": ["saved"],
+                    "non_external_use_reasons": reasons,
+                })
+                self.assertEqual(response.status_code, 422)
+                self.assertIsNone(self.submit_service.command)
 
 
 if __name__ == "__main__":

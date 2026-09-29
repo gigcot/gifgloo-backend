@@ -14,7 +14,7 @@ class SubmitExperimentSurveyCommand:
     actual_actions: tuple[ActualAction, ...]
     intended_context_other: str | None = None
     actual_action_other: str | None = None
-    non_external_use_reason: NonExternalUseReason | None = None
+    non_external_use_reasons: tuple[NonExternalUseReason, ...] = ()
     non_external_use_reason_other: str | None = None
     next_context: str | None = None
 

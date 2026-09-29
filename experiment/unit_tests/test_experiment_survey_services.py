@@ -78,7 +78,7 @@ def valid_command(**changes):
         "user_id": "user-1",
         "intended_context": IntendedContext.GROUP_CHAT,
         "actual_actions": (ActualAction.SAVED,),
-        "non_external_use_reason": NonExternalUseReason.PERSONAL_KEEP,
+        "non_external_use_reasons": (NonExternalUseReason.PERSONAL_KEEP,),
     }
     values.update(changes)
     return SubmitExperimentSurveyCommand(**values)
@@ -137,7 +137,10 @@ class SubmitExperimentSurveyServiceTest(unittest.IsolatedAsyncioTestCase):
     async def test_stores_validated_answers_and_grants_reward_once(self):
         service = self.make_service()
 
-        result = await service.execute(valid_command())
+        result = await service.execute(valid_command(non_external_use_reasons=(
+            NonExternalUseReason.PERSONAL_KEEP,
+            NonExternalUseReason.RIGHTS_CONCERN,
+        )))
 
         self.assertTrue(result.submitted)
         self.assertEqual(self.responses.added.experiment_code, "EXP-001")
@@ -146,7 +149,7 @@ class SubmitExperimentSurveyServiceTest(unittest.IsolatedAsyncioTestCase):
             {
                 "intended_context": "group_chat",
                 "actual_actions": ["saved"],
-                "non_external_use_reason": "personal_keep",
+                "non_external_use_reasons": ["personal_keep", "rights_concern"],
             },
         )
         self.assertEqual(
@@ -210,7 +213,7 @@ class SubmitExperimentSurveyServiceTest(unittest.IsolatedAsyncioTestCase):
 
         with self.assertRaises(ValidationException):
             await service.execute(
-                valid_command(non_external_use_reason=None)
+                valid_command(non_external_use_reasons=())
             )
 
     async def test_external_action_rejects_non_external_reason(self):
@@ -220,9 +223,52 @@ class SubmitExperimentSurveyServiceTest(unittest.IsolatedAsyncioTestCase):
             await service.execute(
                 valid_command(
                     actual_actions=(ActualAction.GROUP_CHAT,),
-                    non_external_use_reason=NonExternalUseReason.NO_SITUATION,
+                    non_external_use_reasons=(NonExternalUseReason.NO_SITUATION,),
                 )
             )
+
+    async def test_duplicate_reasons_are_rejected(self):
+        service = self.make_service()
+        with self.assertRaises(ValidationException):
+            await service.execute(valid_command(non_external_use_reasons=(
+                NonExternalUseReason.NO_SITUATION,
+                NonExternalUseReason.NO_SITUATION,
+            )))
+        self.assertIsNone(self.rewards.command)
+
+    async def test_other_reason_requires_text_even_with_another_reason(self):
+        service = self.make_service()
+        with self.assertRaises(ValidationException):
+            await service.execute(valid_command(non_external_use_reasons=(
+                NonExternalUseReason.NO_SITUATION,
+                NonExternalUseReason.OTHER,
+            )))
+
+    async def test_multiple_reasons_with_other_text_are_stored(self):
+        service = self.make_service()
+        await service.execute(valid_command(
+            non_external_use_reasons=(
+                NonExternalUseReason.NO_SITUATION,
+                NonExternalUseReason.OTHER,
+            ),
+            non_external_use_reason_other=" 다른 이유 ",
+        ))
+        self.assertEqual(self.responses.added.answers["non_external_use_reasons"],
+                         ["no_situation", "other"])
+        self.assertEqual(self.responses.added.answers["non_external_use_reason_other"],
+                         "다른 이유")
+
+    async def test_unselected_other_text_is_rejected(self):
+        service = self.make_service()
+        with self.assertRaises(ValidationException):
+            await service.execute(valid_command(non_external_use_reason_other="다른 이유"))
+
+    async def test_external_action_stores_no_reasons(self):
+        service = self.make_service()
+        await service.execute(valid_command(
+            actual_actions=(ActualAction.GROUP_CHAT,), non_external_use_reasons=(),
+        ))
+        self.assertNotIn("non_external_use_reasons", self.responses.added.answers)
 
 
 if __name__ == "__main__":

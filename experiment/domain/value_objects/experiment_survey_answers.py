@@ -54,7 +54,7 @@ class ExperimentSurveyAnswers:
     actual_actions: tuple[ActualAction, ...]
     intended_context_other: str | None = None
     actual_action_other: str | None = None
-    non_external_use_reason: NonExternalUseReason | None = None
+    non_external_use_reasons: tuple[NonExternalUseReason, ...] = ()
     non_external_use_reason_other: str | None = None
     next_context: str | None = None
 
@@ -68,10 +68,13 @@ class ExperimentSurveyAnswers:
             raise ValidationException("보기만 했음은 다른 행동과 함께 선택할 수 없습니다")
 
         has_external_action = bool(actions & EXTERNAL_ACTIONS)
-        if has_external_action and self.non_external_use_reason is not None:
+        reasons = set(self.non_external_use_reasons)
+        if len(reasons) != len(self.non_external_use_reasons):
+            raise ValidationException("미사용 이유는 중복해서 선택할 수 없습니다")
+        if has_external_action and reasons:
             raise ValidationException("외부 사용 행동이 있으면 미사용 이유를 제출할 수 없습니다")
-        if not has_external_action and self.non_external_use_reason is None:
-            raise ValidationException("외부에서 사용하지 않은 이유를 선택해 주세요")
+        if not has_external_action and not reasons:
+            raise ValidationException("외부에서 사용하지 않은 이유를 하나 이상 선택해 주세요")
 
         self._validate_other(
             self.intended_context == IntendedContext.OTHER,
@@ -84,7 +87,7 @@ class ExperimentSurveyAnswers:
             "실제로 한 행동의 기타 내용을 입력해 주세요",
         )
         self._validate_other(
-            self.non_external_use_reason == NonExternalUseReason.OTHER,
+            NonExternalUseReason.OTHER in reasons,
             self.non_external_use_reason_other,
             "외부에서 사용하지 않은 이유의 기타 내용을 입력해 주세요",
         )
@@ -111,9 +114,9 @@ class ExperimentSurveyAnswers:
         optional_values = {
             "intended_context_other": self.intended_context_other,
             "actual_action_other": self.actual_action_other,
-            "non_external_use_reason": (
-                self.non_external_use_reason.value
-                if self.non_external_use_reason is not None
+            "non_external_use_reasons": (
+                [reason.value for reason in self.non_external_use_reasons]
+                if self.non_external_use_reasons
                 else None
             ),
             "non_external_use_reason_other": self.non_external_use_reason_other,

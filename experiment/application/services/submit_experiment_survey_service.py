@@ -55,7 +55,7 @@ class SubmitExperimentSurveyService:
             actual_actions=command.actual_actions,
             intended_context_other=command.intended_context_other,
             actual_action_other=command.actual_action_other,
-            non_external_use_reason=command.non_external_use_reason,
+            non_external_use_reasons=command.non_external_use_reasons,
             non_external_use_reason_other=command.non_external_use_reason_other,
             next_context=command.next_context,
         )
