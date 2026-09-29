@@ -35,7 +35,7 @@ class GrantExperimentRewardService:
             amount=CreditAccount.composition_cost,
             source_type=CreditSourceType.EXPERIMENT,
             source_id=command.response_id,
-            reason="EXP-001 설문 참여 보상",
+            reason="설문 참여 보상",
             granted_at=command.granted_at,
             expires_at=command.granted_at
             + timedelta(days=CreditPolicy.PASS_VALIDITY_DAYS),

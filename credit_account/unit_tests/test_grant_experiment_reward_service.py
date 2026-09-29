@@ -55,6 +55,7 @@ class GrantExperimentRewardServiceTest(unittest.IsolatedAsyncioTestCase):
             CreditSourceType.EXPERIMENT,
         )
         self.assertEqual(account.pending_lots[0].source_id, "response-1")
+        self.assertEqual(account.pending_transactions[0].reason, "설문 참여 보상")
 
     async def test_existing_charge_does_not_grant_again(self):
         account = CreditAccount(user_id="user-1", balance=10, transactions=[])
