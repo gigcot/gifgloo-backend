@@ -1,0 +1,65 @@
+<!doctype html>
+<html lang="ko">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Gifgloo 로컬 알림 확인</title>
+<style>body{font:17px/1.65 system-ui,sans-serif;max-width:620px;margin:50px auto;padding:0 24px}button{font:inherit;padding:10px 16px;margin:8px 8px 8px 0}#status{white-space:pre-wrap}small{color:#555}</style>
+<h1>로컬 알림 확인</h1>
+<p>합성·DB·결제 없이 <b>실제 테스트 알림 1개</b>만 보냅니다. 테스트용 키와 수신 정보는 메모리에만 있으며 서버를 종료하면 사라집니다.</p>
+<p>아래 버튼을 누르고 알림을 허용하면 8초 뒤 발송합니다. 접수됐다는 안내를 본 뒤 이 탭을 닫아보세요. 알림을 누르면 테스트 결과 페이지가 열려야 합니다.</p>
+<button id="send" disabled>알림 허용하고 1회 테스트</button>
+<button id="cleanup">테스트 구독 정리</button>
+<p id="status" role="status">테스트를 준비하고 있어요.</p>
+<small>권한은 직접 선택해주세요. macOS 알림 설정·집중 모드에 따라 표시되지 않을 수 있습니다. 브라우저의 사이트 알림 권한은 테스트 후 직접 해제할 수 있습니다.</small>
+<script type="module">
+const status = document.querySelector("#status"), send = document.querySelector("#send");
+let config, registration, poll;
+try {
+  if (!("serviceWorker" in navigator) || !("PushManager" in window) || !("Notification" in window)) throw new Error("이 브라우저에서는 Web Push를 지원하지 않아요.");
+  const response = await fetch("/config");
+  if (!response.ok) throw new Error("서버 설정을 읽지 못했어요. 새로고침해주세요.");
+  config = await response.json();
+  await navigator.serviceWorker.register("/completion-notifications-sw.js", {scope:"/"});
+  registration = await Promise.race([navigator.serviceWorker.ready, new Promise((_, reject) => setTimeout(() => reject(new Error("서비스 워커 준비 시간이 초과됐어요.")), 10000))]);
+  status.textContent = "준비됐어요. 아직 권한을 요청하거나 알림을 발송하지 않았어요.";
+  send.disabled = false;
+} catch (error) { status.textContent = error.message; }
+send.onclick = async () => {
+  send.disabled = true;
+  try {
+    const permission = await Notification.requestPermission();
+    if (permission !== "granted") throw new Error("알림을 허용하지 않아 발송하지 않았어요.");
+    const existing = await registration.pushManager.getSubscription();
+    if (existing) await existing.unsubscribe();
+    const key = Uint8Array.from(atob(config.public_key.replace(/-/g,"+").replace(/_/g,"/")), c => c.charCodeAt(0));
+    const subscription = await registration.pushManager.subscribe({userVisibleOnly:true,applicationServerKey:key});
+    const response = await fetch("/send", {method:"POST",headers:{"Content-Type":"application/json","X-Smoke-Token":config.csrf},body:JSON.stringify(subscription.toJSON())});
+    if (!response.ok) throw new Error((await response.json()).detail || "발송을 접수하지 못했어요.");
+    status.textContent = "접수됐어요. 8초 뒤 발송해요. 지금 이 탭을 닫아도 됩니다. 브라우저 앱 자체는 실행해 두세요.";
+    poll = setInterval(async () => {
+      const response = await fetch("/status");
+      if (!response.ok) { clearInterval(poll); return; }
+      const data = await response.json();
+      if (data.status !== "scheduled") {
+        clearInterval(poll);
+        status.textContent = data.status === "accepted" ? "푸시 서비스가 접수했어요. 실제 기기에 표시됐는지는 직접 확인해주세요." : "푸시 서비스 발송 결과: " + data.status;
+      }
+    }, 2000);
+  } catch (error) { status.textContent = error.message; send.disabled = false; }
+};
+document.querySelector("#cleanup").onclick = async () => {
+  try {
+    clearInterval(poll);
+    const current = await navigator.serviceWorker.getRegistration("/");
+    if (current) {
+      const subscription = await current.pushManager.getSubscription();
+      if (subscription) await subscription.unsubscribe();
+      for (const notification of await current.getNotifications()) notification.close();
+      await current.unregister();
+    }
+    send.disabled = true;
+    status.textContent = "이 테스트 주소의 구독과 서비스 워커를 정리했어요. 브라우저 알림 권한은 사이트 설정에서 해제하고 터미널 서버는 Ctrl+C로 종료해주세요.";
+  } catch (error) { status.textContent = error.message; }
+};
+</script>
+</html>

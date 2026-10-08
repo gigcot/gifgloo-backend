@@ -14,15 +14,18 @@ from user.application.services.social_login_service import SocialLoginService
 from user.application.services.get_user_service import GetUserService
 from user.application.services.record_signup_consent_service import RecordSignupConsentService
 from user.application.services.review_login_service import ReviewLoginService
+from user.application.services.create_anonymous_session_service import CreateAnonymousSessionService
+from user.adapter.outbound.persistence.sqlalchemy_user_transaction import SqlAlchemyUserTransaction
 
 
 def _make_social_login_service(provider, db: Session) -> SocialLoginService:
-    credit_repo = SqlAlchemyCreditAccountRepository(db)
+    credit_repo = SqlAlchemyCreditAccountRepository(db, commit_on_save=False)
     credit_init = CreditAccountInitAdapter(CreateCreditAccountService(credit_repo))
     return SocialLoginService(
         social_provider=provider,
-        user_repo=SqlAlchemyUserRepository(db),
+        user_repo=SqlAlchemyUserRepository(db, commit_on_save=False),
         credit_account_init=credit_init,
+        transaction=SqlAlchemyUserTransaction(db),
     )
 
 
@@ -42,6 +45,13 @@ def get_record_signup_consent_service(
 
 def get_user_service(db: Session = Depends(get_db)) -> GetUserService:
     return GetUserService(SqlAlchemyUserRepository(db))
+
+
+def get_anonymous_session_service(db: Session = Depends(get_db)) -> CreateAnonymousSessionService:
+    credit = CreditAccountInitAdapter(CreateCreditAccountService(SqlAlchemyCreditAccountRepository(db, commit_on_save=False)))
+    return CreateAnonymousSessionService(
+        SqlAlchemyUserRepository(db, commit_on_save=False), credit, SqlAlchemyUserTransaction(db),
+    )
 
 
 def get_review_login_service(db: Session = Depends(get_db)) -> ReviewLoginService:

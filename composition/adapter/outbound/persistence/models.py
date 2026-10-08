@@ -1,4 +1,4 @@
-from sqlalchemy import Boolean, Column, DateTime, ForeignKey, Integer, JSON, String
+from sqlalchemy import Boolean, Column, DateTime, ForeignKey, Integer, JSON, String, UniqueConstraint, Index
 
 from config.database import Base
 
@@ -45,3 +45,23 @@ class CompositionFeedbackModel(Base):
     satisfied = Column(Boolean, nullable=False)
     created_at = Column(DateTime(timezone=True), nullable=False)
     updated_at = Column(DateTime(timezone=True), nullable=False)
+
+
+class CompletionNotificationModel(Base):
+    __tablename__ = "composition_notifications"
+    __table_args__ = (
+        UniqueConstraint("job_id", "endpoint_hash", name="uq_composition_notification_browser"),
+        Index("ix_composition_notifications_ready", "status", "next_attempt_at"),
+    )
+    id = Column(String, primary_key=True)
+    job_id = Column(String, ForeignKey("composition_jobs.id", ondelete="CASCADE"), nullable=False)
+    user_id = Column(String, nullable=False)
+    endpoint_hash = Column(String(64), nullable=False)
+    endpoint = Column(String(4096), nullable=False)
+    p256dh = Column(String(128), nullable=False)
+    auth = Column(String(64), nullable=False)
+    status = Column(String(16), nullable=False)
+    attempts = Column(Integer, nullable=False)
+    created_at = Column(DateTime(timezone=True), nullable=False)
+    next_attempt_at = Column(DateTime(timezone=True), nullable=False)
+    expires_at = Column(DateTime(timezone=True), nullable=False)

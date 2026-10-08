@@ -1,8 +1,5 @@
 import json
 import logging
-import os
-
-import jwt
 from fastapi import APIRouter, Depends, HTTPException, Request, UploadFile, File, Form, Query, Response
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
@@ -40,13 +37,10 @@ from shared.metrics import (
     SSE_FAILED_TOTAL,
 )
 from shared.request_context import current_request_path
-from shared.session_token import decode_session_token
+from shared.fastapi_session import require_session_user_id as _get_user_id
 
 router = APIRouter(prefix="/compositions", tags=["composition"])
 logger = logging.getLogger(__name__)
-
-SECRET_KEY = os.getenv("JWT_SECRET_KEY")
-
 
 class CompositionFeedbackBody(BaseModel):
     satisfied: bool
@@ -61,17 +55,6 @@ class UploadedCompositionBody(BaseModel):
     gif_url: str
     upload_id: str
     acknowledge_frame_reduction: bool = False
-
-
-def _get_user_id(request: Request) -> str:
-    token = request.cookies.get("user_token")
-    if not token:
-        raise HTTPException(401, "인증이 필요합니다")
-    try:
-        payload = decode_session_token(token, SECRET_KEY)
-        return payload["user_id"]
-    except Exception:
-        raise HTTPException(401, "유효하지 않은 토큰입니다")
 
 
 @router.get("")
@@ -89,7 +72,9 @@ async def get_composition_list(
                 "job_id": j.job_id,
                 "status": j.status.value,
                 "source_gif_url": j.source_gif_url,
-                "target_url": j.target_url,
+                "target_asset_id": j.target_asset_id,
+                "target_url": str(request.url_for("get_asset_content", asset_id=j.target_asset_id))
+                if j.target_asset_id else None,
                 "result_url": j.result_url,
                 "result_asset_id": j.result_asset_id,
                 "created_at": j.created_at,

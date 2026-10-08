@@ -11,7 +11,7 @@ class CompositionJobSummary:
     job_id: str
     status: CompositionStatus
     source_gif_url: str | None
-    target_url: str | None
+    target_asset_id: str | None
     result_url: str | None
     result_asset_id: str | None
     created_at: str
@@ -33,7 +33,7 @@ class GetCompositionListService:
                 job_id=job.id,
                 status=job.status,
                 source_gif_url=job.source_gif_url,
-                target_url=job.target_url,
+                target_asset_id=job.target_asset_id,
                 result_url=job.result_url,
                 result_asset_id=job.result_asset_id,
                 created_at=job.created_at.isoformat(),

@@ -25,6 +25,8 @@ from user.domain.value_objects.social_account import SocialProvider
 from user.domain.value_objects.signup_consent import SignupConsent
 from user.domain.value_objects.acquisition import Acquisition
 from shared.exceptions import AuthenticationException, BusinessRuleException
+from shared.session_token import decode_session_token
+from user.adapter.inbound.fastapi.session import set_user_cookie, BOOTSTRAP_COOKIE
 
 load_dotenv(".env")
 
@@ -41,32 +43,12 @@ SECRET_KEY = os.getenv("JWT_SECRET_KEY")
 OAUTH_STATE_COOKIE = "oauth_signup_state"
 
 
-def _issue_jwt(user_id: str, review_login: bool = False) -> str:
-    payload: dict[str, str | bool] = {"user_id": user_id}
-    if review_login:
-        payload["review_login"] = True
-    return jwt.encode(payload, SECRET_KEY, algorithm="HS256")
-
-
-def _set_user_cookie(
-    response: Response,
-    user_id: str,
-    review_login: bool = False,
-) -> None:
-    response.set_cookie(
-        key="user_token",
-        value=_issue_jwt(user_id, review_login),
-        httponly=True,
-        samesite="lax",
-        secure=os.getenv("COOKIE_SECURE").lower() == "true",
-    )
-
-
-def _redirect_with_cookie(user_id: str, is_new_user: bool = False) -> RedirectResponse:
+def _redirect_with_cookie(user_id: str, is_new_user: bool = False, session_version: int = 0) -> RedirectResponse:
     url = f"{FRONTEND_CALLBACK_URL}?is_new_user=true" if is_new_user else FRONTEND_CALLBACK_URL
     response = RedirectResponse(url=url)
-    _set_user_cookie(response, user_id)
+    set_user_cookie(response, user_id, "member", session_version)
     response.delete_cookie(OAUTH_STATE_COOKIE)
+    response.delete_cookie(BOOTSTRAP_COOKIE)
     return response
 
 
@@ -94,7 +76,7 @@ class OAuthConsentBody(BaseModel):
     acquisition: AcquisitionCommand | None = None
 
 
-def _start_social_login(provider: SocialProvider, body: OAuthConsentBody) -> JSONResponse:
+def _start_social_login(provider: SocialProvider, body: OAuthConsentBody, request: Request) -> JSONResponse:
     if not body.agreed_to_terms or not body.agreed_to_privacy:
         raise BusinessRuleException("필수 약관에 동의해야 합니다")
     SignupConsent.record(
@@ -102,6 +84,17 @@ def _start_social_login(provider: SocialProvider, body: OAuthConsentBody) -> JSO
         privacy_version=body.privacy_version,
         is_fourteen_or_older=body.is_fourteen_or_older,
     )
+    anonymous_user_id = None
+    anonymous_session_version = None
+    token = request.cookies.get("user_token")
+    if token is not None:
+        try:
+            session = decode_session_token(token, SECRET_KEY)
+        except jwt.InvalidTokenError as exc:
+            raise AuthenticationException("세션이 만료되었습니다. 새로고침 후 다시 시도해주세요") from exc
+        if "user_kind" in session and session["user_kind"] == "anonymous":
+            anonymous_user_id = session["user_id"]
+            anonymous_session_version = session["session_version"]
     state = jwt.encode(
         {
             "provider": provider.value,
@@ -109,6 +102,8 @@ def _start_social_login(provider: SocialProvider, body: OAuthConsentBody) -> JSO
             "privacy_version": body.privacy_version,
             "is_fourteen_or_older": body.is_fourteen_or_older,
             "acquisition": body.acquisition.model_dump() if body.acquisition else None,
+            "anonymous_user_id": anonymous_user_id,
+            "anonymous_session_version": anonymous_session_version,
             "nonce": secrets.token_urlsafe(16),
             "exp": datetime.now(timezone.utc) + timedelta(minutes=10),
         },
@@ -142,7 +137,7 @@ def _start_social_login(provider: SocialProvider, body: OAuthConsentBody) -> JSO
     return response
 
 
-def _get_signup_context(request: Request, state: str, provider: SocialProvider) -> tuple[SignupConsent, Acquisition | None]:
+def _get_signup_context(request: Request, state: str, provider: SocialProvider) -> tuple[SignupConsent, Acquisition | None, str | None, int | None]:
     saved_state = request.cookies.get(OAUTH_STATE_COOKIE)
     if saved_state is None or not hmac.compare_digest(saved_state, state):
         raise AuthenticationException("가입 동의를 확인할 수 없습니다")
@@ -162,7 +157,19 @@ def _get_signup_context(request: Request, state: str, provider: SocialProvider) 
         acquisition = Acquisition(**payload["acquisition"])
         if not any(asdict(acquisition).values()):
             acquisition = None
-    return consent, acquisition
+    anonymous_id = payload["anonymous_user_id"] if "anonymous_user_id" in payload else None
+    anonymous_version = payload["anonymous_session_version"] if "anonymous_session_version" in payload else None
+    if anonymous_id is not None:
+        token = request.cookies.get("user_token")
+        if token is None:
+            raise AuthenticationException("가입을 시작한 익명 세션이 없습니다")
+        try:
+            session = decode_session_token(token, SECRET_KEY)
+        except jwt.InvalidTokenError as exc:
+            raise AuthenticationException("익명 세션이 만료되었습니다") from exc
+        if session["user_id"] != anonymous_id or session["session_version"] != anonymous_version:
+            raise AuthenticationException("가입을 시작한 익명 세션과 다릅니다")
+    return consent, acquisition, anonymous_id, anonymous_version
 
 
 @router.post("/review-login", status_code=204)
@@ -174,7 +181,7 @@ def review_login(
         ReviewLoginCommand(login_id=body.login_id, password=body.password)
     )
     response = Response(status_code=204)
-    _set_user_cookie(response, result.user_id, review_login=True)
+    set_user_cookie(response, result.user_id, "member", 0, review_login=True)
     return response
 
 
@@ -187,14 +194,15 @@ def logout() -> Response:
         samesite="lax",
         secure=os.getenv("COOKIE_SECURE").lower() == "true",
     )
+    response.delete_cookie(BOOTSTRAP_COOKIE)
     return response
 
 
 # --- Kakao ---
 
 @router.post("/kakao/start")
-def kakao_login(body: OAuthConsentBody) -> JSONResponse:
-    return _start_social_login(SocialProvider.KAKAO, body)
+def kakao_login(body: OAuthConsentBody, request: Request) -> JSONResponse:
+    return _start_social_login(SocialProvider.KAKAO, body, request)
 
 
 @router.get("/kakao/callback")
@@ -204,16 +212,16 @@ def kakao_callback(
     request: Request,
     service: SocialLoginService = Depends(get_kakao_social_login_service),
 ):
-    consent, acquisition = _get_signup_context(request, state, SocialProvider.KAKAO)
-    result = service.execute(SocialLoginCommand(provider=SocialProvider.KAKAO, code=code, signup_consent=consent, acquisition=acquisition))
-    return _redirect_with_cookie(result.user_id, result.is_new_user)
+    consent, acquisition, anonymous_id, anonymous_version = _get_signup_context(request, state, SocialProvider.KAKAO)
+    result = service.execute(SocialLoginCommand(provider=SocialProvider.KAKAO, code=code, signup_consent=consent, acquisition=acquisition, anonymous_user_id=anonymous_id, anonymous_session_version=anonymous_version))
+    return _redirect_with_cookie(result.user_id, result.is_new_user, result.session_version)
 
 
 # --- Google ---
 
 @router.post("/google/start")
-def google_login(body: OAuthConsentBody) -> JSONResponse:
-    return _start_social_login(SocialProvider.GOOGLE, body)
+def google_login(body: OAuthConsentBody, request: Request) -> JSONResponse:
+    return _start_social_login(SocialProvider.GOOGLE, body, request)
 
 
 @router.get("/google/callback")
@@ -223,6 +231,6 @@ def google_callback(
     request: Request,
     service: SocialLoginService = Depends(get_google_social_login_service),
 ):
-    consent, acquisition = _get_signup_context(request, state, SocialProvider.GOOGLE)
-    result = service.execute(SocialLoginCommand(provider=SocialProvider.GOOGLE, code=code, signup_consent=consent, acquisition=acquisition))
-    return _redirect_with_cookie(result.user_id, result.is_new_user)
+    consent, acquisition, anonymous_id, anonymous_version = _get_signup_context(request, state, SocialProvider.GOOGLE)
+    result = service.execute(SocialLoginCommand(provider=SocialProvider.GOOGLE, code=code, signup_consent=consent, acquisition=acquisition, anonymous_user_id=anonymous_id, anonymous_session_version=anonymous_version))
+    return _redirect_with_cookie(result.user_id, result.is_new_user, result.session_version)

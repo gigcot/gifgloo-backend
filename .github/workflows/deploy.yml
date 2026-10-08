@@ -51,6 +51,8 @@ jobs:
               - 'monitoring/**'
               - 'ops/nginx/**'
               - 'tests/api_tests/**'
+              - 'tests/asset/unit_tests/**'
+              - 'tests/storage_tests/**'
               - 'tests/composition/unit_tests/**'
               - 'tests/integration_tests/**'
               - 'tests/payment/unit_tests/**'
@@ -59,11 +61,16 @@ jobs:
               - '.github/workflows/deploy.yml'
               - 'lambda/deploy.sh'
               - 'lambda/ai_processor/**'
+              - 'shared/r2_config.py'
+              - 'shared/exceptions.py'
             lambda_gif:
+              - '.github/workflows/deploy.yml'
               - 'lambda/deploy.sh'
               - 'lambda/build_layer.sh'
               - 'lambda/gif_processor/**'
               - 'lambda/layer/**'
+              - 'shared/r2_config.py'
+              - 'shared/exceptions.py'
 
   ci:
     needs: changes
@@ -107,6 +114,7 @@ jobs:
       R2_ACCESS_KEY_ID: test
       R2_SECRET_ACCESS_KEY: test
       R2_BUCKET_NAME: gifgloo-test
+      R2_PRIVATE_BUCKET_NAME: gifgloo-private-test
       R2_UPLOAD_BUCKET_NAME: gifgloo-composition-upload-test
       R2_PUBLIC_URL: http://localhost:9000/gifgloo-test
     steps:
@@ -123,6 +131,7 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt
+          pip install -r lambda/ai_processor/requirements.txt
 
       - name: Compile Python files
         run: |
@@ -153,6 +162,8 @@ jobs:
           python -m unittest discover -s experiment/unit_tests -p 'test_*.py'
           python -m unittest discover -s user/unit_tests -p 'test_*.py'
           python -m unittest discover -s tests/composition/unit_tests -p 'test_*.py'
+          python -m unittest discover -s tests/asset/unit_tests -p 'test_*.py'
+          python -m unittest discover -s tests/storage_tests -p 'test_*.py'
           python -m unittest discover -s tests/payment/unit_tests -p 'test_*.py'
           python -m unittest discover -s tests/user/unit_tests -p 'test_*.py'
 
@@ -235,6 +246,7 @@ jobs:
       R2_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
       R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
       R2_UPLOAD_BUCKET_NAME: ${{ secrets.R2_UPLOAD_BUCKET_NAME }}
+      R2_PRIVATE_BUCKET_NAME: ${{ secrets.R2_PRIVATE_BUCKET_NAME }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -274,7 +286,7 @@ jobs:
           host: ${{ secrets.EC2_HOST }}
           username: ${{ secrets.EC2_USER }}
           key: ${{ secrets.EC2_SSH_KEY }}
-          envs: R2_ACCESS_KEY_ID,R2_SECRET_ACCESS_KEY,R2_UPLOAD_BUCKET_NAME
+          envs: R2_ACCESS_KEY_ID,R2_SECRET_ACCESS_KEY,R2_UPLOAD_BUCKET_NAME,R2_PRIVATE_BUCKET_NAME
           script: |
             set -euo pipefail
             cd ~/gifgloo-backend
@@ -294,6 +306,7 @@ jobs:
             sync_env R2_ACCESS_KEY_ID "$R2_ACCESS_KEY_ID"
             sync_env R2_SECRET_ACCESS_KEY "$R2_SECRET_ACCESS_KEY"
             sync_env R2_UPLOAD_BUCKET_NAME "$R2_UPLOAD_BUCKET_NAME"
+            sync_env R2_PRIVATE_BUCKET_NAME "$R2_PRIVATE_BUCKET_NAME"
             if [ -n "${{ secrets.GHCR_USER }}" ] && [ -n "${{ secrets.GHCR_TOKEN }}" ]; then
               echo "${{ secrets.GHCR_TOKEN }}" | docker login ghcr.io -u "${{ secrets.GHCR_USER }}" --password-stdin
             fi
@@ -336,6 +349,7 @@ jobs:
       R2_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
       R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
       R2_BUCKET_NAME: ${{ secrets.R2_BUCKET_NAME }}
+      R2_PRIVATE_BUCKET_NAME: ${{ secrets.R2_PRIVATE_BUCKET_NAME }}
       R2_UPLOAD_BUCKET_NAME: ${{ secrets.R2_UPLOAD_BUCKET_NAME }}
       OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
       INTERNAL_SECRET: ${{ secrets.INTERNAL_SECRET }}

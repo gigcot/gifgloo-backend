@@ -54,7 +54,7 @@ class _Storage:
     def make_key(self, job_id, category):
         return f"compositions/{job_id}/target.png"
 
-    def public_url_for(self, key):
+    def location_for(self, key, category):
         return f"https://assets.example/{key}"
 
 

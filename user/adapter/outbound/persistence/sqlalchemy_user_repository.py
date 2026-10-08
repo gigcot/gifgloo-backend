@@ -13,12 +13,16 @@ from user.domain.value_objects.acquisition import Acquisition
 
 
 class SqlAlchemyUserRepository(UserRepositoryPort):
-    def __init__(self, session: Session):
+    def __init__(self, session: Session, commit_on_save: bool = True):
         self._session = session
+        self._commit_on_save = commit_on_save
 
     def save(self, user: User) -> None:
         existing = self._session.get(UserModel, user.id)
         if existing:
+            existing.provider = user.social_account.provider.value if user.social_account else None
+            existing.provider_id = user.social_account.provider_id if user.social_account else None
+            existing.session_version = user.session_version
             existing.email = user.email.value if user.email else None
             existing.role = user.role.value
             existing.status = user.status.value
@@ -37,8 +41,9 @@ class SqlAlchemyUserRepository(UserRepositoryPort):
         else:
             self._session.add(UserModel(
                 id=user.id,
-                provider=user.social_account.provider.value,
-                provider_id=user.social_account.provider_id,
+                provider=user.social_account.provider.value if user.social_account else None,
+                provider_id=user.social_account.provider_id if user.social_account else None,
+                session_version=user.session_version,
                 email=user.email.value if user.email else None,
                 role=user.role.value,
                 status=user.status.value,
@@ -60,7 +65,10 @@ class SqlAlchemyUserRepository(UserRepositoryPort):
                     user.signup_consent.agreed_at if user.signup_consent else None
                 ),
             ))
-        self._session.commit()
+        if self._commit_on_save:
+            self._session.commit()
+        else:
+            self._session.flush()
 
     def find_by_id(self, user_id: str) -> Optional[User]:
         model = self._session.get(UserModel, user_id)
@@ -82,10 +90,11 @@ class SqlAlchemyUserRepository(UserRepositoryPort):
     def _to_domain(self, model: UserModel) -> User:
         user = object.__new__(User)
         user.id = model.id
+        user.session_version = model.session_version
         user.social_account = SocialAccount(
             provider=SocialProvider(model.provider),
             provider_id=model.provider_id,
-        )
+        ) if model.provider is not None else None
         user.email = Email(model.email) if model.email else None
         user.role = UserRole(model.role)
         user.status = UserStatus(model.status)

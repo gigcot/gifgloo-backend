@@ -64,7 +64,9 @@ async def get_asset_list(
                 "asset_id": a.asset_id,
                 "asset_type": a.asset_type.value,
                 "category": a.category.value,
-                "url": a.url,
+                "url": str(request.url_for("get_asset_content", asset_id=a.asset_id))
+                if a.category in {AssetCategory.USER_UPLOAD, AssetCategory.COMPOSITION_DRAFT}
+                else a.url,
             }
             for a in result.assets
         ]
@@ -98,10 +100,30 @@ def download_asset(
     service: DownloadAssetService = Depends(get_download_asset_service),
 ):
     result = service.execute(DownloadAssetCommand(_get_user_id(request), asset_id))
+    extension = "png" if result.content_type == "image/png" else "gif"
     return Response(
         content=result.data,
-        media_type="image/gif",
-        headers={"Content-Disposition": f'attachment; filename="gifgloo-{asset_id}.gif"'},
+        media_type=result.content_type,
+        headers={
+            "Content-Disposition": f'attachment; filename="gifgloo-{asset_id}.{extension}"',
+            "Cache-Control": "private, no-store",
+            "Vary": "Cookie",
+            "X-Content-Type-Options": "nosniff",
+        },
+    )
+
+
+@router.get("/{asset_id}/content")
+def get_asset_content(
+    asset_id: str,
+    request: Request,
+    service: DownloadAssetService = Depends(get_download_asset_service),
+):
+    result = service.execute(DownloadAssetCommand(_get_user_id(request), asset_id))
+    return Response(
+        content=result.data,
+        media_type=result.content_type,
+        headers={"Cache-Control": "private, no-store", "Vary": "Cookie", "X-Content-Type-Options": "nosniff"},
     )
 
 

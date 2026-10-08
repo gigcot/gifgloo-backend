@@ -16,6 +16,9 @@ class GetUserResult:
     email: Optional[str]
     role: UserRole
     status: UserStatus
+    user_kind: str = "member"
+    session_version: int = 0
+    consent_required: bool = False
 
 
 class GetUserPort(ABC):

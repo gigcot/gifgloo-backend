@@ -130,7 +130,8 @@ class SocialSignupCreditTest(unittest.TestCase):
 
         user_repo = UserRepo()
         credit_repo = CreditRepo()
-        service = SocialLoginService(SocialProviderStub(), user_repo, CreditInit(credit_repo))
+        from unittest.mock import Mock
+        service = SocialLoginService(SocialProviderStub(), user_repo, CreditInit(credit_repo), Mock())
         consent = SignupConsent.record(CURRENT_TERMS_VERSION, CURRENT_PRIVACY_VERSION, True)
         command = SocialLoginCommand(provider=SocialProvider.GOOGLE, code="code", signup_consent=consent, acquisition=Acquisition(campaign="exp001"))
 
