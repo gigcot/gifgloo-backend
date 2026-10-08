@@ -8,8 +8,9 @@ from credit_account.domain.value_objects.transaction_type import TransactionType
 
 
 class SqlAlchemyCreditAccountRepository(CreditAccountRepositoryPort):
-    def __init__(self, session: Session):
+    def __init__(self, session: Session, commit_on_save: bool = True):
         self._session = session
+        self._commit_on_save = commit_on_save
 
     def save(self, input: CreditAccount) -> None:
         existing = self._session.get(CreditAccountModel, input.user_id)
@@ -30,7 +31,10 @@ class SqlAlchemyCreditAccountRepository(CreditAccountRepositoryPort):
                 lots=[self._lot_to_model(lot, input.user_id) for lot in input.lots],
                 transactions=[self._tx_to_model(tx, input.user_id) for tx in input.transactions],
             ))
-        self._session.commit()
+        if self._commit_on_save:
+            self._session.commit()
+        else:
+            self._session.flush()
         input.mark_pending_changes_persisted()
 
     def find_credit_by_user_id(self, user_id: str) -> CreditAccount | None:

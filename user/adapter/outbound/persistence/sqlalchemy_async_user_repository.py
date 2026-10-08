@@ -19,10 +19,11 @@ class SqlAlchemyAsyncUserRepository(AsyncUserRepository):
             return None
         user = object.__new__(User)
         user.id = model.id
+        user.session_version = model.session_version
         user.social_account = SocialAccount(
             provider=SocialProvider(model.provider),
             provider_id=model.provider_id,
-        )
+        ) if model.provider is not None else None
         user.email = Email(model.email) if model.email else None
         user.role = UserRole(model.role)
         user.status = UserStatus(model.status)

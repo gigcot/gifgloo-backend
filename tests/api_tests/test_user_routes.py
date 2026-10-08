@@ -24,6 +24,8 @@ from config.user import (  # noqa: E402
 )
 from user.adapter.inbound.fastapi.oauth2 import router as oauth_router  # noqa: E402
 from user.adapter.inbound.fastapi.user_router import router  # noqa: E402
+from user.application.ports.inbound.get_user import GetUserResult
+from user.domain.aggregates.user import UserRole, UserStatus
 
 
 class FakeRecordSignupConsentService:
@@ -48,7 +50,7 @@ class FakeGetUserService:
 
     def execute(self, query):
         self.query = query
-        return SimpleNamespace(user_id=self.user_id, email=self.email)
+        return GetUserResult(user_id=self.user_id, email=self.email, role=UserRole.USER, status=UserStatus.ACTIVE)
 
 
 class UserRoutesTest(unittest.TestCase):
@@ -107,7 +109,7 @@ class UserRoutesTest(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertEqual(
             response.json(),
-            {"ok": True, "user_id": "user-1", "email": "member@example.com"},
+            {"ok": True, "user_id": "user-1", "email": "member@example.com", "user_kind": "member", "consent_required": False},
         )
         self.assertEqual(self.get_user_service.query.user_id, "user-1")
 
@@ -120,7 +122,7 @@ class UserRoutesTest(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertEqual(
             response.json(),
-            {"ok": True, "user_id": "user-1", "email": None},
+            {"ok": True, "user_id": "user-1", "email": None, "user_kind": "member", "consent_required": False},
         )
 
     def test_rejects_existing_review_session_when_review_login_is_disabled(self):

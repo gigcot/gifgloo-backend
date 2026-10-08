@@ -1,14 +1,19 @@
-from sqlalchemy import Boolean, Column, DateTime, String
+from sqlalchemy import Boolean, CheckConstraint, Column, DateTime, Integer, String, UniqueConstraint
 
 from config.database import Base
 
 
 class UserModel(Base):
     __tablename__ = "users"
+    __table_args__ = (
+        UniqueConstraint("provider", "provider_id", name="uq_users_social_account"),
+        CheckConstraint("(provider IS NULL) = (provider_id IS NULL)", name="ck_users_social_pair"),
+    )
 
     id = Column(String, primary_key=True)
-    provider = Column(String, nullable=False)
-    provider_id = Column(String, nullable=False, index=True)
+    provider = Column(String, nullable=True)
+    provider_id = Column(String, nullable=True, index=True)
+    session_version = Column(Integer, nullable=False, default=0, server_default="0")
     email = Column(String, nullable=True)
     role = Column(String, nullable=False)
     status = Column(String, nullable=False)

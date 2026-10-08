@@ -16,4 +16,7 @@ class GetUserService(GetUserPort):
             email=user.email.value if user.email else None,
             role=user.role,
             status=user.status,
+            user_kind=user.user_kind,
+            session_version=user.session_version,
+            consent_required=user.consent_required,
         )

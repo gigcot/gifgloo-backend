@@ -12,12 +12,15 @@ class SocialLoginCommand:
     code: str
     signup_consent: SignupConsent
     acquisition: Acquisition | None = None
+    anonymous_user_id: str | None = None
+    anonymous_session_version: int | None = None
 
 
 @dataclass
 class SocialLoginResult:
     user_id: str
     is_new_user: bool
+    session_version: int = 0
 
 
 class SocialLoginPort(ABC):

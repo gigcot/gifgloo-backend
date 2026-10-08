@@ -7,7 +7,7 @@ import uuid
 
 from user.domain.value_objects.email import Email
 from user.domain.value_objects.social_account import SocialAccount
-from user.domain.value_objects.signup_consent import SignupConsent
+from user.domain.value_objects.signup_consent import SignupConsent, CURRENT_PRIVACY_VERSION, CURRENT_TERMS_VERSION
 from user.domain.value_objects.acquisition import Acquisition
 from shared.exceptions import InvalidStateException
 
@@ -25,14 +25,15 @@ class UserStatus(Enum):
 class User:
     def __init__(
         self,
-        social_account: SocialAccount,
+        social_account: SocialAccount | None = None,
         email: Optional[Email] = None,
         role: UserRole = UserRole.USER,
         signup_consent: Optional[SignupConsent] = None,
         acquisition: Acquisition | None = None,
     ):
         self.id: str = str(uuid.uuid4())
-        self.social_account: SocialAccount = social_account
+        self.social_account = social_account
+        self.session_version = 0
         self.email: Optional[Email] = email
         self.role: UserRole = role
         self.signup_consent: Optional[SignupConsent] = signup_consent
@@ -74,3 +75,22 @@ class User:
 
     def is_active(self) -> bool:
         return self.status == UserStatus.ACTIVE
+
+    @property
+    def user_kind(self) -> str:
+        return "member" if self.social_account is not None else "anonymous"
+
+    @property
+    def consent_required(self) -> bool:
+        return (
+            self.signup_consent is None
+            or self.signup_consent.terms_version != CURRENT_TERMS_VERSION
+            or self.signup_consent.privacy_version != CURRENT_PRIVACY_VERSION
+        )
+
+    def connect_social_account(self, account: SocialAccount, email: Email | None) -> None:
+        if self.social_account is not None or not self.is_active():
+            raise InvalidStateException("소셜 계정을 연결할 수 없는 사용자입니다")
+        self.social_account = account
+        self.email = email
+        self.session_version += 1

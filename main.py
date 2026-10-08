@@ -17,6 +17,7 @@ from shared.metrics import (
     record_http_metrics,
 )
 from shared.request_context import RequestContextMiddleware
+from user.adapter.inbound.fastapi.session_middleware import UserSessionMiddleware
 import user.adapter.outbound.persistence.models  # noqa: F401
 import composition.adapter.outbound.persistence.models  # noqa: F401
 import asset.adapter.outbound.models  # noqa: F401
@@ -54,6 +55,7 @@ configure_file_logging()
 app = FastAPI(lifespan=lifespan)
 register_error_handlers(app)
 app.add_middleware(RequestContextMiddleware)
+app.add_middleware(UserSessionMiddleware)
 
 CORS_ORIGINS = os.getenv("CORS_ORIGINS").split(",")
 
