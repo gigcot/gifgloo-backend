@@ -20,6 +20,6 @@ class StoragePort(ABC):
         pass
 
     @abstractmethod
-    def public_url_for(self, key: str) -> str:
-        """R2 key → public URL"""
+    def location_for(self, key: str, category: StorageCategory) -> str:
+        """공개 결과 URL 또는 서버 내부 비공개 파일 위치 반환"""
         pass

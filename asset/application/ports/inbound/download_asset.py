@@ -16,6 +16,7 @@ class DownloadSharedAssetQuery:
 @dataclass
 class DownloadAssetResult:
     data: bytes
+    content_type: str
 
 
 class DownloadAssetPort(ABC):

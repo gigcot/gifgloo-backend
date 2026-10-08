@@ -72,7 +72,9 @@ async def get_composition_list(
                 "job_id": j.job_id,
                 "status": j.status.value,
                 "source_gif_url": j.source_gif_url,
-                "target_url": j.target_url,
+                "target_asset_id": j.target_asset_id,
+                "target_url": str(request.url_for("get_asset_content", asset_id=j.target_asset_id))
+                if j.target_asset_id else None,
                 "result_url": j.result_url,
                 "result_asset_id": j.result_asset_id,
                 "created_at": j.created_at,

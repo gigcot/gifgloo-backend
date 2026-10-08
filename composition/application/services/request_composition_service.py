@@ -144,7 +144,7 @@ class RequestCompositionService(RequestCompositionPort):
                     ResolveUploadCommand(command.user_id, command.target.upload_id)
                 )
                 target_key = self._storage.make_key(job.id, StorageCategory.TARGET)
-            target_url = self._storage.public_url_for(target_key)
+            target_url = self._storage.location_for(target_key, StorageCategory.TARGET)
             job.target_url = target_url
             job.source_gif_asset_id = await self._asset_save.save(
                 AssetSaveCommand(

@@ -82,9 +82,11 @@ deploy_layer() {
 
 deploy_gif_function() {
     echo "▶ gif_processor 패키징 중..."
+    python3 -c 'from shared.r2_config import private_bucket_name; private_bucket_name()'
     cd "$GIF_FUNCTION_DIR"
     zip -r "$GIF_FUNCTION_ZIP" handler.py
     cd -
+    zip "$GIF_FUNCTION_ZIP" shared/__init__.py shared/r2_config.py shared/exceptions.py
 
     if [ ! -f "lambda/.layer_arn" ]; then
         echo "❌ lambda/.layer_arn 없음 — 먼저 Layer 배포 필요"
@@ -98,7 +100,7 @@ deploy_gif_function() {
         "$GIF_MEMORY" \
         "$GIF_TIMEOUT" \
         "--layers $LAYER_ARN" \
-        "R2_ENDPOINT_URL=$R2_ENDPOINT_URL,R2_ACCESS_KEY_ID=$R2_ACCESS_KEY_ID,R2_SECRET_ACCESS_KEY=$R2_SECRET_ACCESS_KEY,R2_BUCKET_NAME=$R2_BUCKET_NAME"
+        "R2_ENDPOINT_URL=$R2_ENDPOINT_URL,R2_ACCESS_KEY_ID=$R2_ACCESS_KEY_ID,R2_SECRET_ACCESS_KEY=$R2_SECRET_ACCESS_KEY,R2_BUCKET_NAME=$R2_BUCKET_NAME,R2_PRIVATE_BUCKET_NAME=$R2_PRIVATE_BUCKET_NAME"
 
     echo "✓ gif_processor 배포 완료"
 }
@@ -107,8 +109,11 @@ deploy_gif_function() {
 
 deploy_ai_function() {
     echo "▶ ai_processor 패키징 중..."
+    python3 -c 'from shared.r2_config import private_bucket_name; private_bucket_name()'
     mkdir -p /tmp/ai_build
     cp "$AI_FUNCTION_DIR/handler.py" /tmp/ai_build/
+    mkdir -p /tmp/ai_build/shared
+    cp shared/__init__.py shared/r2_config.py shared/exceptions.py /tmp/ai_build/shared/
     cp -r "$AI_FUNCTION_DIR/prompts/" /tmp/ai_build/prompts/
     python3.12 -m pip install -r "$AI_FUNCTION_DIR/requirements.txt" \
         -t /tmp/ai_build \
@@ -126,7 +131,7 @@ deploy_ai_function() {
         "$AI_MEMORY" \
         "$AI_TIMEOUT" \
         "" \
-        "R2_ENDPOINT_URL=$R2_ENDPOINT_URL,R2_ACCESS_KEY_ID=$R2_ACCESS_KEY_ID,R2_SECRET_ACCESS_KEY=$R2_SECRET_ACCESS_KEY,R2_BUCKET_NAME=$R2_BUCKET_NAME,R2_UPLOAD_BUCKET_NAME=$R2_UPLOAD_BUCKET_NAME,OPENAI_API_KEY=$OPENAI_API_KEY,INTERNAL_SECRET=$INTERNAL_SECRET"
+        "R2_ENDPOINT_URL=$R2_ENDPOINT_URL,R2_ACCESS_KEY_ID=$R2_ACCESS_KEY_ID,R2_SECRET_ACCESS_KEY=$R2_SECRET_ACCESS_KEY,R2_BUCKET_NAME=$R2_BUCKET_NAME,R2_PRIVATE_BUCKET_NAME=$R2_PRIVATE_BUCKET_NAME,R2_UPLOAD_BUCKET_NAME=$R2_UPLOAD_BUCKET_NAME,OPENAI_API_KEY=$OPENAI_API_KEY,INTERNAL_SECRET=$INTERNAL_SECRET"
 
     aws lambda wait function-updated \
         --function-name "$AI_FUNCTION_NAME" \

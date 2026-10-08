@@ -7,7 +7,7 @@ from composition.application.ports.outbound.persistence.async_composition_reposi
 from composition.application.ports.outbound.persistence.composition_gate_repository import CompositionGateRepository
 from composition.application.ports.outbound.persistence.async_transaction import AsyncTransaction
 from composition.application.ports.outbound.domain_bridges.asset_save_port import AssetSaveCommand, AssetSavePort
-from composition.application.ports.outbound.aws.storage_port import StoragePort
+from composition.application.ports.outbound.aws.storage_port import StoragePort, StorageCategory
 from composition.application.ports.outbound.domain_bridges.credit_port import CreditPort
 from composition.application.ports.outbound.domain_bridges.user_verification_port import (
     UserVerificationPort,
@@ -118,13 +118,13 @@ class PipelineCallbackService:
         if not await self._user_verification.is_active_user(job.user_id):
             raise AuthorizationException("유효하지 않은 유저입니다")
         draft_asset_id = await self._asset_save.save(
-            AssetSaveCommand(user_id=job.user_id, category=AssetCategory.COMPOSITION_DRAFT, url=self._storage.public_url_for(draft_key))
+            AssetSaveCommand(user_id=job.user_id, category=AssetCategory.COMPOSITION_DRAFT, url=self._storage.location_for(draft_key, StorageCategory.DRAFT))
         )
         result_asset_id = await self._asset_save.save(
-            AssetSaveCommand(user_id=job.user_id, category=AssetCategory.COMPOSITION_RESULT, url=self._storage.public_url_for(result_key))
+            AssetSaveCommand(user_id=job.user_id, category=AssetCategory.COMPOSITION_RESULT, url=self._storage.location_for(result_key, StorageCategory.RESULT))
         )
         job.complete(
-            result_url=self._storage.public_url_for(result_key),
+            result_url=self._storage.location_for(result_key, StorageCategory.RESULT),
             draft_asset_id=draft_asset_id,
             result_asset_id=result_asset_id,
         )

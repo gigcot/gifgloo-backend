@@ -16,8 +16,10 @@ import boto3
 from openai import OpenAI
 from PIL import Image, ImageOps, UnidentifiedImageError
 from pillow_heif import register_heif_opener
+from shared.r2_config import private_bucket_name
 
 BUCKET_NAME = os.environ.get("R2_BUCKET_NAME", "gifgloo")
+PRIVATE_BUCKET_NAME = private_bucket_name()
 UPLOAD_BUCKET_NAME = os.environ["R2_UPLOAD_BUCKET_NAME"]
 IMAGE_MODEL = "gpt-image-1.5"
 OUTPUT_SIZE = "1024x1024"
@@ -96,16 +98,16 @@ def _r2_client():
 
 
 def _download(client, key: str) -> bytes:
-    resp = client.get_object(Bucket=BUCKET_NAME, Key=key)
+    resp = client.get_object(Bucket=PRIVATE_BUCKET_NAME, Key=key)
     return resp["Body"].read()
 
 
 def _upload_png(client, key: str, data: bytes) -> None:
-    client.put_object(Bucket=BUCKET_NAME, Key=key, Body=data, ContentType="image/png")
+    client.put_object(Bucket=PRIVATE_BUCKET_NAME, Key=key, Body=data, ContentType="image/png", CacheControl="private, no-store")
 
 
 def _normalize_target(client, target_key: str, upload_key: str | None) -> None:
-    source_bucket = UPLOAD_BUCKET_NAME if upload_key else BUCKET_NAME
+    source_bucket = UPLOAD_BUCKET_NAME if upload_key else PRIVATE_BUCKET_NAME
     source_key = upload_key or target_key
     try:
         response = client.get_object(Bucket=source_bucket, Key=source_key)

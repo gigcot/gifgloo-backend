@@ -27,7 +27,7 @@ class _AssetSave:
 
 
 class _Storage:
-    def public_url_for(self, key):
+    def location_for(self, key, category):
         return f"https://assets.example/{key}"
 
 

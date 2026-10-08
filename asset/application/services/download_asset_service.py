@@ -29,9 +29,10 @@ class DownloadAssetService(DownloadAssetPort):
         asset = self._asset_repo.find_by_id(command.asset_id)
         if asset.user_id != command.user_id:
             raise AuthorizationException("자신의 자산만 다운로드할 수 있습니다")
-        return DownloadAssetResult(
-            data=self._storage.execute(StorageDownloadCommand(asset.storage_url.value)).bytes,
-        )
+        if not asset.is_available_for_composition():
+            raise NotFoundException("파일을 찾을 수 없습니다")
+        stored = self._storage.execute(StorageDownloadCommand(asset.storage_url.value, asset.category))
+        return DownloadAssetResult(data=stored.bytes, content_type=stored.content_type)
 
 
 class DownloadSharedAssetService(DownloadSharedAssetPort):
@@ -43,6 +44,5 @@ class DownloadSharedAssetService(DownloadSharedAssetPort):
         asset = self._asset_repo.find_by_share_token(query.share_token)
         if asset.category != AssetCategory.COMPOSITION_RESULT or not asset.is_available_for_composition():
             raise NotFoundException("공유 결과를 찾을 수 없습니다")
-        return DownloadAssetResult(
-            data=self._storage.execute(StorageDownloadCommand(asset.storage_url.value)).bytes,
-        )
+        stored = self._storage.execute(StorageDownloadCommand(asset.storage_url.value, asset.category))
+        return DownloadAssetResult(data=stored.bytes, content_type=stored.content_type)

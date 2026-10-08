@@ -11,6 +11,7 @@ from config.payment_settings import validate_payment_config
 from config.web_push import get_web_push_settings, dispatch_completion_notifications
 from shared.fastapi_error_handler import register_error_handlers
 from shared.logging_config import configure_file_logging
+from shared.r2_config import private_bucket_name
 from shared.metrics import (
     metrics_response,
     mark_metrics_process_dead,
@@ -42,6 +43,7 @@ from experiment.adapter.inbound.fastapi.experiment_router import router as exper
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     validate_payment_config()
+    private_bucket_name()
     runtime_metrics_task = asyncio.create_task(monitor_runtime_metrics())
     push_settings = get_web_push_settings()
     push_task = asyncio.create_task(dispatch_completion_notifications(push_settings)) if push_settings else None

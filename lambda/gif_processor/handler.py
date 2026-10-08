@@ -15,6 +15,7 @@ import tempfile
 import urllib.request
 
 import boto3
+from shared.r2_config import private_bucket_name
 
 FFMPEG = "/opt/bin/ffmpeg"
 FFPROBE = "/opt/bin/ffprobe"
@@ -33,6 +34,7 @@ def _r2_client():
 
 
 BUCKET_NAME = os.environ.get("R2_BUCKET_NAME", "gifgloo")
+PRIVATE_BUCKET_NAME = private_bucket_name()
 
 
 def _extracted_frame_key(job_id: str, frame_idx: int) -> str:
@@ -139,7 +141,7 @@ def extract_frames(gif_url: str, max_frames: int, job_id: str) -> dict:
                 frame_bytes = f.read()
 
             key = _extracted_frame_key(job_id, len(frame_keys))
-            client.put_object(Bucket=BUCKET_NAME, Key=key, Body=frame_bytes, ContentType="image/png")
+            client.put_object(Bucket=PRIVATE_BUCKET_NAME, Key=key, Body=frame_bytes, ContentType="image/png", CacheControl="private, no-store")
             frame_keys.append(key)
 
             duration_sec = all_durations_sec[i] if i < len(all_durations_sec) else 0.1
@@ -161,7 +163,7 @@ def build_gif(frames_r2_keys: list[str], durations_ms: list[int], output_key: st
     with tempfile.TemporaryDirectory() as tmpdir:
         # R2에서 composited frames 다운로드
         for i, key in enumerate(frames_r2_keys):
-            resp = client.get_object(Bucket=BUCKET_NAME, Key=key)
+            resp = client.get_object(Bucket=PRIVATE_BUCKET_NAME, Key=key)
             frame_path = os.path.join(tmpdir, f"frame_{i:04d}.png")
             with open(frame_path, "wb") as f:
                 f.write(resp["Body"].read())
