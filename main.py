@@ -8,6 +8,7 @@ from dotenv import load_dotenv
 load_dotenv(".env")
 
 from config.payment_settings import validate_payment_config
+from config.web_push import get_web_push_settings, dispatch_completion_notifications
 from shared.fastapi_error_handler import register_error_handlers
 from shared.logging_config import configure_file_logging
 from shared.metrics import (
@@ -27,6 +28,7 @@ import admin.adapter.outbound.persistence.models  # noqa: F401
 import experiment.adapter.outbound.persistence.models  # noqa: F401
 
 from composition.adapter.inbound.fastapi.composition_router import router as composition_router
+from composition.adapter.inbound.fastapi.completion_notification_router import router as completion_notification_router
 from composition.adapter.inbound.fastapi.composition_internal_router import router as composition_internal_router
 from user.adapter.inbound.fastapi.oauth2 import router as oauth_router
 from user.adapter.inbound.fastapi.user_router import router as user_router
@@ -41,9 +43,15 @@ from experiment.adapter.inbound.fastapi.experiment_router import router as exper
 async def lifespan(app: FastAPI):
     validate_payment_config()
     runtime_metrics_task = asyncio.create_task(monitor_runtime_metrics())
+    push_settings = get_web_push_settings()
+    push_task = asyncio.create_task(dispatch_completion_notifications(push_settings)) if push_settings else None
     try:
         yield
     finally:
+        if push_task:
+            push_task.cancel()
+            with suppress(asyncio.CancelledError):
+                await push_task
         runtime_metrics_task.cancel()
         with suppress(asyncio.CancelledError):
             await runtime_metrics_task
@@ -76,6 +84,7 @@ async def metrics_middleware(request: Request, call_next):
 
 app.get("/metrics")(metrics_response)
 app.include_router(composition_router)
+app.include_router(completion_notification_router)
 app.include_router(composition_internal_router)
 app.include_router(oauth_router)
 app.include_router(user_router)
