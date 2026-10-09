@@ -27,6 +27,7 @@ from composition.adapter.outbound.persistence.sqlalchemy_composition_feedback_re
     SqlAlchemyCompositionFeedbackRepository,
 )
 from composition.application.services.get_composition_list_service import GetCompositionListService
+from composition.application.services.get_composition_feedback_service import GetCompositionFeedbackService
 from composition.application.services.get_composition_status_service import GetCompositionStatusService
 from composition.application.services.pipeline_callback_service import PipelineCallbackService
 from composition.application.services.prepare_composition_upload_service import PrepareCompositionUploadService
@@ -115,6 +116,15 @@ def get_composition_status_service() -> GetCompositionStatusService:
                 SqlAlchemyAsyncCreditSummaryReader(AsyncSessionLocal)
             )
         ),
+    )
+
+
+def get_composition_feedback_service(
+    db: AsyncSession = Depends(get_async_db),
+) -> GetCompositionFeedbackService:
+    return GetCompositionFeedbackService(
+        status_reader=SqlAlchemyAsyncCompositionStatusReader(AsyncSessionLocal),
+        feedback_repo=SqlAlchemyCompositionFeedbackRepository(db),
     )
 
 

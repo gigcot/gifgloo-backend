@@ -5,6 +5,8 @@ from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
 from composition.application.ports.inbound.get_composition_status import GetCompositionStatusQuery
+from composition.application.ports.inbound.get_composition_feedback import GetCompositionFeedbackCommand
+from composition.application.services.get_composition_feedback_service import GetCompositionFeedbackService
 from composition.application.ports.inbound.request_composition import (
     InlineTargetImage,
     RequestCompositionCommand,
@@ -20,6 +22,7 @@ from composition.application.services.request_composition_service import Request
 from composition.domain.value_objects.composition_status import CompositionStatus
 from config.composition import (
     get_composition_list_service,
+    get_composition_feedback_service,
     get_composition_status_service,
     reconcile_expired_composition_gate,
     get_request_composition_service,
@@ -176,6 +179,23 @@ async def get_composition_status(
             else None
         ),
     }
+
+
+@router.get("/{composition_job_id}/feedback")
+async def get_composition_feedback(
+    request: Request,
+    response: Response,
+    composition_job_id: str,
+    service: GetCompositionFeedbackService = Depends(get_composition_feedback_service),
+):
+    result = await service.execute(
+        GetCompositionFeedbackCommand(
+            composition_job_id=composition_job_id,
+            user_id=_get_user_id(request),
+        )
+    )
+    response.headers["Cache-Control"] = "no-store"
+    return {"satisfied": result.satisfied}
 
 
 @router.put("/{composition_job_id}/feedback", status_code=204)

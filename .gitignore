@@ -48,7 +48,15 @@ load_test/results/
 
 cc_prompt/
 .claude/
-tests/
+tests/*
+!tests/composition/
+tests/composition/*
+!tests/composition/unit_tests/
+tests/composition/unit_tests/*
+!tests/composition/unit_tests/test_get_composition_feedback_service.py
+!tests/integration_tests/
+tests/integration_tests/*
+!tests/integration_tests/test_composition_feedback.py
 AGENTS.md
 portfolio-export/
 

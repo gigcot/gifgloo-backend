@@ -36,13 +36,14 @@ from composition.adapter.inbound.fastapi.composition_internal_router import (  #
 from composition.adapter.inbound.fastapi.composition_router import router as composition_router  # noqa: E402
 from config.composition import (  # noqa: E402
     get_composition_status_service,
+    get_composition_feedback_service,
     get_pipeline_callback_service,
     get_request_composition_service,
     get_prepare_composition_upload_service,
     get_submit_composition_feedback_service,
 )
 from composition.domain.value_objects.composition_status import CompositionStatus  # noqa: E402
-from shared.exceptions import CompositionUnavailableException  # noqa: E402
+from shared.exceptions import CompositionUnavailableException, InvalidStateException  # noqa: E402
 from shared.fastapi_error_handler import register_error_handlers  # noqa: E402
 from shared.metrics import normalized_path  # noqa: E402
 
@@ -135,6 +136,7 @@ class CompositionRoutesTest(unittest.TestCase):
         self.callback_service = _PipelineCallbackService()
         self.status_service = _CompositionStatusService()
         self.feedback_service = _CompositionFeedbackService()
+        self.get_feedback_service = AsyncMock()
         app = FastAPI()
         register_error_handlers(app)
         app.include_router(composition_router)
@@ -146,6 +148,7 @@ class CompositionRoutesTest(unittest.TestCase):
         app.dependency_overrides[get_submit_composition_feedback_service] = (
             lambda: self.feedback_service
         )
+        app.dependency_overrides[get_composition_feedback_service] = lambda: self.get_feedback_service
         self.client = TestClient(app)
 
     def _set_auth_cookie(self) -> None:
@@ -199,6 +202,29 @@ class CompositionRoutesTest(unittest.TestCase):
             self.request_service.command.target.upload_id,
             "0e65188c-13a0-4f08-b176-c6f62482db49",
         )
+
+    def test_get_composition_feedback_is_private_and_not_cached(self):
+        self._set_auth_cookie()
+        for satisfied in (None, False, True):
+            self.get_feedback_service.execute.return_value = SimpleNamespace(satisfied=satisfied)
+            response = self.client.get("/compositions/job-1/feedback")
+            self.assertEqual(response.status_code, 200)
+            self.assertEqual(response.json(), {"satisfied": satisfied})
+            self.assertEqual(response.headers["Cache-Control"], "no-store")
+            command = self.get_feedback_service.execute.call_args.args[0]
+            self.assertEqual((command.composition_job_id, command.user_id), ("job-1", "user-1"))
+
+    def test_feedback_requires_session_for_read_and_write(self):
+        self.assertEqual(self.client.get("/compositions/job-1/feedback").status_code, 401)
+        self.assertEqual(self.client.put("/compositions/job-1/feedback", json={"satisfied": True}).status_code, 401)
+        self.get_feedback_service.execute.assert_not_called()
+        self.assertIsNone(self.feedback_service.command)
+
+    def test_duplicate_feedback_is_conflict(self):
+        self._set_auth_cookie()
+        self.feedback_service.execute = AsyncMock(side_effect=InvalidStateException("이미 평가한 합성 결과입니다"))
+        response = self.client.put("/compositions/job-1/feedback", json={"satisfied": False})
+        self.assertEqual(response.status_code, 409)
 
     def test_submit_composition_feedback(self):
         self._set_auth_cookie()
