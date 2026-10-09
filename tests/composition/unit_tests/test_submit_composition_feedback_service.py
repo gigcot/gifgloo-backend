@@ -8,7 +8,7 @@ from composition.application.services.submit_composition_feedback_service import
 )
 from composition.domain.aggregates.composition_job import CompositionJob
 from composition.domain.value_objects.composition_status import CompositionStatus
-from shared.exceptions import AuthorizationException, InvalidStateException
+from shared.exceptions import AuthorizationException, InvalidStateException, NotFoundException
 
 
 class _StatusReader:
@@ -23,8 +23,11 @@ class _FeedbackRepository:
     def __init__(self):
         self.feedback = None
 
-    async def save(self, feedback):
+    async def create_once(self, feedback):
+        if self.feedback is not None:
+            return False
         self.feedback = feedback
+        return True
 
 
 class _Transaction:
@@ -39,6 +42,31 @@ class _Transaction:
 
 
 class SubmitCompositionFeedbackServiceTest(unittest.IsolatedAsyncioTestCase):
+    async def test_rejects_same_and_opposite_repeat_without_changing_first_feedback(self):
+        for initial in (False, True):
+            with self.subTest(initial=initial):
+                job = CompositionJob(user_id="user-1")
+                job.status = CompositionStatus.COMPLETED
+                repository = _FeedbackRepository()
+                transaction = _Transaction()
+                service = SubmitCompositionFeedbackService(_StatusReader(job), repository, transaction)
+                await service.execute(SubmitCompositionFeedbackCommand(job.id, job.user_id, initial))
+                first_feedback = repository.feedback
+                transaction.committed = False
+                for repeated in (initial, not initial):
+                    with self.assertRaises(InvalidStateException):
+                        await service.execute(SubmitCompositionFeedbackCommand(job.id, job.user_id, repeated))
+                    self.assertIs(repository.feedback, first_feedback)
+                    self.assertEqual(repository.feedback.satisfied, initial)
+                    self.assertFalse(transaction.committed)
+
+    async def test_rejects_missing_job_without_writing(self):
+        repository = _FeedbackRepository()
+        service = SubmitCompositionFeedbackService(_StatusReader(None), repository, _Transaction())
+        with self.assertRaises(NotFoundException):
+            await service.execute(SubmitCompositionFeedbackCommand("missing", "user-1", True))
+        self.assertIsNone(repository.feedback)
+
     async def test_saves_feedback_for_completed_owned_job(self):
         job = CompositionJob(user_id="user-1")
         job.status = CompositionStatus.COMPLETED
