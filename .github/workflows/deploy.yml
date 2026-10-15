@@ -167,6 +167,12 @@ jobs:
           python -m unittest discover -s tests/payment/unit_tests -p 'test_*.py'
           python -m unittest discover -s tests/user/unit_tests -p 'test_*.py'
 
+      - name: Install ffmpeg for composition regressions
+        run: sudo apt-get update && sudo apt-get install -y ffmpeg
+
+      - name: Verify sparse composition and GIF timing without API calls
+        run: python -m unittest discover -s composition/unit_tests -p 'test_sparse_pipeline.py'
+
       - name: Run API smoke tests
         if: needs.changes.outputs.app == 'true'
         run: python -m unittest discover -s tests/api_tests -p 'test_*.py'

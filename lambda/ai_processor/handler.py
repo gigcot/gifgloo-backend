@@ -6,6 +6,7 @@ resume_from으로 특정 단계부터 재개 가능
 import base64
 import io
 import json
+import math
 import os
 import time
 import urllib.request
@@ -17,62 +18,93 @@ from openai import OpenAI
 from PIL import Image, ImageOps, UnidentifiedImageError
 from pillow_heif import register_heif_opener
 from shared.r2_config import private_bucket_name
+from shared.exceptions import ExternalServiceException, ValidationException
 
 BUCKET_NAME = os.environ.get("R2_BUCKET_NAME", "gifgloo")
 PRIVATE_BUCKET_NAME = private_bucket_name()
 UPLOAD_BUCKET_NAME = os.environ["R2_UPLOAD_BUCKET_NAME"]
-IMAGE_MODEL = "gpt-image-1.5"
-OUTPUT_SIZE = "1024x1024"
+SPEC_MODEL = "gpt-6-luna"
+IMAGE_MODEL = "gpt-image-2.5-flare"
+LEGACY_IMAGE_MODEL = "gpt-image-1.5"
+DRAFT_SIZE = "1024x1024"
 GIF_PROCESSOR_FUNCTION = "gifgloo-gif-processor"
 
 INTERNAL_SECRET = os.environ.get("INTERNAL_SECRET", "")
 
-SYSTEM_PROMPT_PATH = os.path.join(os.path.dirname(__file__), "prompts", "comp_order_prompt_ver7.txt")
+SYSTEM_PROMPT_PATH = os.path.join(os.path.dirname(__file__), "prompts", "sparse_composition_plan.txt")
 with open(SYSTEM_PROMPT_PATH) as f:
     SYSTEM_PROMPT = f.read()
 
-RESPONSE_FORMAT = {
-    "type": "json_schema",
-    "json_schema": {
-        "name": "composition_spec",
-        "strict": False,
-        "schema": {
-            "type": "object",
-            "properties": {
-                "object_draft": {
-                    "type": "object",
-                    "properties": {
-                        "object_match": {
-                            "type": "object",
-                            "properties": {
-                                "base": {"type": "string"},
-                                "target": {"type": "string"},
-                            },
-                            "required": ["base", "target"],
-                        },
-                        "type": {"type": "string", "enum": ["replace", "mix"]},
-                        "note": {"type": "object"},
-                    },
-                    "required": ["object_match", "type", "note"],
-                },
-                "draft_reference_frame": {"type": ["integer", "null"]},
-                "preserve": {"type": "string"},
-                "frame_directions": {
-                    "type": "array",
-                    "items": {
-                        "type": "object",
-                        "properties": {
-                            "frame_idx": {"type": "integer"},
-                            "description": {"type": "string"},
-                        },
-                        "required": ["frame_idx", "description"],
-                    },
-                },
-            },
-            "required": ["object_draft", "draft_reference_frame", "preserve", "frame_directions"],
-        },
-    },
-}
+def _response_format(frame_count: int) -> dict:
+    text = {"type": "string"}
+    strings = {"type": "array", "items": text}
+
+    def obj(properties):
+        return {"type": "object", "properties": properties,
+                "required": list(properties), "additionalProperties": False}
+
+    frame_index = {"type": "integer", "minimum": 0, "maximum": frame_count - 1}
+    schema = obj({
+        "source_reading": obj({"possible_uses": strings, "defining_cues": strings}),
+        "replacement": obj({"base_subject": text, "target_subject": text, "scope": text,
+                            "identity_features": strings, "adaptation": text}),
+        "draft": obj({"reference_frame": frame_index, "appearance_plan": text}),
+        "integration_notes": strings,
+        "frame_exceptions": {"type": "array", "items": obj({
+            "frame_idx": frame_index,
+            "reason": {"type": "string", "enum": ["subject_selection", "anatomy_mapping", "interaction_ambiguity"]},
+            "ambiguity": text, "instruction": text,
+        })},
+    })
+    return {"type": "json_schema", "json_schema": {
+        "name": "sparse_composition_plan", "strict": False, "schema": schema,
+    }}
+
+
+def _validate_spec(spec: dict, frame_count: int) -> None:
+    if not 1 <= frame_count <= 20:
+        raise ValidationException("합성 프레임 수는 1~20장이어야 합니다")
+
+    def check(value, rule):
+        kind = rule["type"]
+        if kind == "object":
+            if not isinstance(value, dict) or set(value) != set(rule["required"]):
+                raise ExternalServiceException("합성 계획의 필드가 올바르지 않습니다")
+            for key, child in rule["properties"].items():
+                check(value[key], child)
+        elif kind == "array":
+            if not isinstance(value, list):
+                raise ExternalServiceException("합성 계획의 목록이 올바르지 않습니다")
+            for item in value:
+                check(item, rule["items"])
+        elif kind == "string":
+            if not isinstance(value, str) or not value.strip():
+                raise ExternalServiceException("합성 계획에 빈 지시가 있습니다")
+            if "enum" in rule and value not in rule["enum"]:
+                raise ExternalServiceException("합성 계획의 예외 유형이 올바르지 않습니다")
+        elif type(value) is not int or not rule["minimum"] <= value <= rule["maximum"]:
+            raise ExternalServiceException("합성 계획의 프레임 번호가 범위를 벗어났습니다")
+
+    check(spec, _response_format(frame_count)["json_schema"]["schema"])
+    indices = [entry["frame_idx"] for entry in spec["frame_exceptions"]]
+    if len(indices) != len(set(indices)):
+        raise ExternalServiceException("합성 계획에 중복 프레임 예외가 있습니다")
+
+
+def _frame_output_size(frame: bytes) -> str:
+    with Image.open(io.BytesIO(frame)) as image:
+        width, height = image.size
+    ratio = width / height
+    if not 1 / 3 <= ratio <= 3:
+        raise ValidationException("합성할 GIF 비율은 가로:세로 1:3~3:1 범위여야 합니다")
+    output_width = round(math.sqrt(1048576 * ratio) / 16) * 16
+    output_height = round(math.sqrt(1048576 / ratio) / 16) * 16
+    if output_width > 3 * output_height:
+        output_height = math.ceil(output_width / 3 / 16) * 16
+    elif output_height > 3 * output_width:
+        output_width = math.ceil(output_height / 3 / 16) * 16
+    return f"{output_width}x{output_height}"
+
 
 STAGE_ORDER = ["EXTRACTING_FRAMES", "ANALYZING", "GENERATING_DRAFT", "COMPOSITING", "BUILDING_GIF"]
 
@@ -224,7 +256,7 @@ def _should_run(stage: str, resume_from: str | None) -> bool:
 
 # ── 프롬프트 빌더 ─────────────────────────────────────────────
 
-def _build_draft_prompt(spec: dict, white_bg: bool = True) -> str:
+def _build_legacy_draft_prompt(spec: dict, white_bg: bool = True) -> str:
     object_draft = spec["object_draft"]
     composite_type = object_draft["type"]
     note = object_draft.get("note", {})
@@ -270,7 +302,7 @@ def _build_draft_prompt(spec: dict, white_bg: bool = True) -> str:
         )
 
 
-def _build_frame_prompt(spec: dict, frame_idx: int) -> str:
+def _build_legacy_frame_prompt(spec: dict, frame_idx: int) -> str:
     frame_dir_map = {fd["frame_idx"]: fd for fd in spec["frame_directions"]}
     base_obj = spec["object_draft"]["object_match"]["base"]
     preserve = spec.get("preserve", "")
@@ -306,15 +338,82 @@ def _build_frame_prompt(spec: dict, frame_idx: int) -> str:
     return prompt
 
 
+def _build_draft_prompt(spec: dict) -> str:
+    return f'''Create ONE source-anchored identity-reference draft for a personalized GIF.
+Image 1 is the selected BASE reference frame. It governs the current orientation,
+posture, expression configuration and intensity, framing, and visible/cropped parts
+of the replacement subject in this single draft, as well as source rendering.
+Image 2 is TARGET. It supplies recognizable identity and stable appearance only.
+
+Fixed replacement plan:
+{json.dumps(spec['replacement'], ensure_ascii=False)}
+Stable appearance and adaptation plan:
+{spec['draft']['appearance_plan']}
+
+Show only the selected replacement scope as it would appear in Image 1 after identity
+transfer, isolated on a plain white background. Keep TARGET identity recognizable,
+adapting anatomy or appearance only as required by the fixed replacement plan.
+Do not turn the subject toward the camera, straighten its pose, neutralize or replace
+its expression, or reveal hidden details merely to make identity easier to recognize.
+When removing surrounding objects or actors, retain the subject's visible configuration;
+do not restage it as a portrait. Do not add unrelated body regions to a head-only scope.
+Do not copy TARGET's photographed pose, expression, scene, or unrelated props.
+Omit BASE scene props, other actors, captions, and surrounding background.
+This draft captures one selected BASE state. Later GIF frames will reuse its stable
+identity/adaptation only, while their own BASE images supply their pose and expression.
+'''
+
+
+def _build_frame_prompt(spec: dict, frame_idx: int) -> str:
+    exceptions = [item for item in spec['frame_exceptions'] if item['frame_idx'] == frame_idx]
+    extra = ''
+    if exceptions:
+        extra = '\nFrame-specific decision:\n' + exceptions[0]['instruction'] + '\n'
+    return f'''Edit Image 1 (CURRENT BASE FRAME) by transferring the selected subject identity
+from Image 2 (DRAFT IDENTITY REFERENCE). Do not create a new scene or animation pose.
+
+Replacement plan:
+{json.dumps(spec['replacement'], ensure_ascii=False)}
+
+Source meaning, for preservation only:
+{json.dumps(spec['source_reading'], ensure_ascii=False)}
+These are possible uses and defining cues, not instructions to enact a generic emotion.
+Keep cues only in the configuration and intensity actually visible in CURRENT BASE.
+
+Shared integration decisions:
+{json.dumps(spec['integration_notes'], ensure_ascii=False)}
+{extra}
+FIXED EDIT RULES
+1. CURRENT BASE governs actual pose, expression, gaze, head/body angle, subject placement,
+   relative scale, framing and crop. Read them directly from Image 1. Preserve its subtle
+   configuration and intensity, including meaningful asymmetry or stylization; do not
+   exaggerate a reaction or normalize away visible exaggeration.
+2. DRAFT governs recognizable identity and the planned stable appearance/adaptation only.
+   Do not copy its pose, expression, orientation, crop, white background or extra objects.
+3. Change only the selected replacement scope. Keep current-frame unrelated actors,
+   background, visible text, objects and their positions/shapes as they appear in BASE.
+   Match lighting and perspective to BASE. Do not freeze things across the whole clip.
+4. Preserve current-frame contacts, depth ordering and occlusions. A cropped/hidden part
+   stays cropped/hidden even if DRAFT shows it; if the subject is absent, do not add it.
+   Adapt anatomy only as needed for the actual source configuration. Do not invent
+   hidden or ambiguous details, move a prop to accommodate DRAFT, or add a new gesture.
+5. If any textual interpretation conflicts with visible evidence, CURRENT BASE wins.
+   Output this one edited frame, with no extra labels, panels, or decorative additions.
+'''
+
+
 # ── AI 액션 ───────────────────────────────────────────────────
 
 def analyze(frame_keys: list[str], target_key: str) -> dict:
     r2 = _r2_client()
-
-
+    if not 1 <= len(frame_keys) <= 20:
+        raise ValidationException("합성 프레임 수는 1~20장이어야 합니다")
     content = []
     for i, key in enumerate(frame_keys):
-        b64 = base64.b64encode(_download(r2, key)).decode()
+        frame = _download(r2, key)
+        if i == 0:
+            _frame_output_size(frame)
+        b64 = base64.b64encode(frame).decode()
         content.append({"type": "text", "text": f"Image {i} (GIF Frame {i}):"})
         content.append({"type": "image_url", "image_url": {"url": f"data:image/png;base64,{b64}"}})
 
@@ -323,21 +422,32 @@ def analyze(frame_keys: list[str], target_key: str) -> dict:
     content.append({"type": "image_url", "image_url": {"url": f"data:image/png;base64,{b64_target}"}})
 
     response = openai_client.chat.completions.create(
-        model="gpt-5-mini",
+        model=SPEC_MODEL,
         messages=[
             {"role": "system", "content": SYSTEM_PROMPT},
             {"role": "user", "content": content},
         ],
-        response_format=RESPONSE_FORMAT,
+        response_format=_response_format(len(frame_keys)),
+        max_completion_tokens=16000,
+        store=False,
     )
-    return json.loads(response.choices[0].message.content)
+    choice = response.choices[0]
+    if choice.finish_reason != "stop" or choice.message.refusal or not choice.message.content:
+        raise ExternalServiceException("합성 계획 생성이 완료되지 않았습니다")
+    try:
+        spec = json.loads(choice.message.content)
+    except json.JSONDecodeError as exc:
+        raise ExternalServiceException("합성 계획 응답이 올바른 JSON이 아닙니다") from exc
+    _validate_spec(spec, len(frame_keys))
+    return spec
 
 
 def generate_draft(target_key: str, ref_frame_key: str | None, spec: dict, draft_key: str, callback_url: str, job_id: str, run_id: str) -> float:
     r2 = _r2_client()
 
 
-    prompt = _build_draft_prompt(spec)
+    legacy = "object_draft" in spec
+    prompt = _build_legacy_draft_prompt(spec) if legacy else _build_draft_prompt(spec)
     images = []
     if ref_frame_key:
         images.append(("base_frame.png", io.BytesIO(_download(r2, ref_frame_key)), "image/png"))
@@ -346,33 +456,35 @@ def generate_draft(target_key: str, ref_frame_key: str | None, spec: dict, draft
     _record_edit(callback_url, job_id, run_id)
     draft_started_at = time.monotonic()
     response = openai_client.with_options(max_retries=0).images.edit(
-        model=IMAGE_MODEL,
+        model=LEGACY_IMAGE_MODEL if legacy else IMAGE_MODEL,
         image=images,
         prompt=prompt,
         quality="low",
         n=1,
-        size=OUTPUT_SIZE,
+        size=DRAFT_SIZE,
         output_format="png",
     )
     _upload_png(r2, draft_key, base64.b64decode(response.data[0].b64_json))
     return draft_started_at
 
 
-def _composite_one(r2, openai_client, frame_data: bytes, draft_data: bytes, spec: dict, frame_idx: int, job_id: str, mark_edit_started) -> str:
+def _composite_one(r2, openai_client, frame_data: bytes, draft_data: bytes, spec: dict, frame_idx: int, job_id: str, mark_edit_started, output_size: str) -> str:
     output_key = _composited_key(job_id, frame_idx)
-    prompt = _build_frame_prompt(spec, frame_idx)
+    legacy = "object_draft" in spec
+    prompt = _build_legacy_frame_prompt(spec, frame_idx) if legacy else _build_frame_prompt(spec, frame_idx)
     images = [
         ("frame.png", io.BytesIO(frame_data), "image/png"),
         ("draft.png", io.BytesIO(draft_data), "image/png"),
     ]
     mark_edit_started()
     response = openai_client.with_options(max_retries=0).images.edit(
-        model=IMAGE_MODEL,
+        model=LEGACY_IMAGE_MODEL if legacy else IMAGE_MODEL,
         image=images,
         prompt=prompt,
         quality="low",
         n=1,
-        size=OUTPUT_SIZE,
+        size=output_size,
+        output_format="png",
     )
     _upload_png(r2, output_key, base64.b64decode(response.data[0].b64_json))
     return output_key
@@ -382,6 +494,11 @@ def composite_frames(job_id: str, run_id: str, callback_url: str, frame_keys: li
     r2 = _r2_client()
     draft_data = _download(r2, draft_key)
     frames = [_download(r2, frame_key) for frame_key in frame_keys]
+    if "object_draft" in spec:
+        output_size = DRAFT_SIZE
+    else:
+        _validate_spec(spec, len(frames))
+        output_size = _frame_output_size(frames[0])
     _record_edit(callback_url, job_id, run_id)
 
     last_edit_started_at = None
@@ -395,7 +512,7 @@ def composite_frames(job_id: str, run_id: str, callback_url: str, frame_keys: li
     try:
         with ThreadPoolExecutor(max_workers=len(frame_keys)) as executor:
             futures = [
-                executor.submit(_composite_one, r2, openai_client, frame_data, draft_data, spec, i, job_id, mark_edit_started)
+                executor.submit(_composite_one, r2, openai_client, frame_data, draft_data, spec, i, job_id, mark_edit_started, output_size)
                 for i, frame_data in enumerate(frames)
             ]
             composited_keys = [f.result() for f in futures]
@@ -440,8 +557,13 @@ def run_pipeline(event: dict, run_id: str) -> None:
             spec_data = analyze(frame_keys, target_key)
 
         if _should_run("GENERATING_DRAFT", resume_from):
+            if "object_draft" in spec_data:
+                ref_index = spec_data["draft_reference_frame"]
+                ref_frame_key = frame_keys[ref_index] if ref_index is not None else None
+            else:
+                _validate_spec(spec_data, len(frame_keys))
+                ref_frame_key = frame_keys[spec_data["draft"]["reference_frame"]]
             _checkpoint(callback_url, job_id, run_id, "GENERATING_DRAFT", spec=spec_data)
-            ref_frame_key = frame_keys[spec_data["draft_reference_frame"]] if spec_data.get("draft_reference_frame") is not None else None
             draft_started_at = generate_draft(target_key, ref_frame_key, spec_data, draft_key, callback_url, job_id, run_id)
         else:
             draft_started_at = None
