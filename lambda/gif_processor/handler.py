@@ -16,6 +16,7 @@ import urllib.request
 
 import boto3
 from shared.r2_config import private_bucket_name
+from shared.exceptions import ExternalServiceException, ValidationException
 
 FFMPEG = "/opt/bin/ffmpeg"
 FFPROBE = "/opt/bin/ffprobe"
@@ -89,6 +90,8 @@ def check_feasibility(gif_url: str) -> dict:
 # ── extract_frames ────────────────────────────────────────────
 
 def extract_frames(gif_url: str, max_frames: int, job_id: str) -> dict:
+    if not 1 <= max_frames <= 20:
+        raise ValidationException("합성 프레임 수는 1~20장이어야 합니다")
     gif_bytes = _fetch_url(gif_url)
     client = _r2_client()
 
@@ -98,8 +101,12 @@ def extract_frames(gif_url: str, max_frames: int, job_id: str) -> dict:
             f.write(gif_bytes)
 
         total = _count_frames(gif_path)
+        if total < 1:
+            raise ValidationException("유효한 GIF 프레임이 없습니다")
 
-        if total > max_frames:
+        if max_frames == 1:
+            indices = [0]
+        elif total > max_frames:
             indices = [round(i * (total - 1) / (max_frames - 1)) for i in range(max_frames)]
         else:
             indices = list(range(total))
@@ -117,21 +124,22 @@ def extract_frames(gif_url: str, max_frames: int, job_id: str) -> dict:
             check=True,
         )
         probe_data = json.loads(probe.stdout)
-        all_durations_sec = [
-            float(p.get("duration_time", 0.1))
-            for p in probe_data.get("packets", [])
-        ]
+        durations = [round(float(packet["duration_time"]) * 1000) for packet in probe_data["packets"]]
+        if len(durations) != total or any(ms <= 0 or ms % 10 for ms in durations):
+            raise ExternalServiceException("GIF 프레임 지연 시간을 읽지 못했습니다")
 
         frames_dir = os.path.join(tmpdir, "frames")
         os.makedirs(frames_dir)
         subprocess.run(
             [
-                FFMPEG, "-i", gif_path,
+                FFMPEG, "-i", gif_path, "-fps_mode", "passthrough",
                 os.path.join(frames_dir, "frame_%04d.png"),
             ],
             capture_output=True,
             check=True,
         )
+        if len(os.listdir(frames_dir)) != total:
+            raise ExternalServiceException("GIF 디코딩 프레임 수가 원본과 다릅니다")
 
         frame_keys = []
         durations_ms = []
@@ -144,13 +152,12 @@ def extract_frames(gif_url: str, max_frames: int, job_id: str) -> dict:
             client.put_object(Bucket=PRIVATE_BUCKET_NAME, Key=key, Body=frame_bytes, ContentType="image/png", CacheControl="private, no-store")
             frame_keys.append(key)
 
-            duration_sec = all_durations_sec[i] if i < len(all_durations_sec) else 0.1
-            durations_ms.append(int(duration_sec * 1000))
+            durations_ms.append(durations[i])
 
         if total > max_frames:
-            total_ms = sum(int(d * 1000) for d in all_durations_sec)
-            per_frame_ms = total_ms // max_frames
-            durations_ms = [per_frame_ms] * max_frames
+            total_cs = sum(durations) // 10
+            boundaries = [round(i * total_cs / max_frames) for i in range(max_frames + 1)]
+            durations_ms = [(end - start) * 10 for start, end in zip(boundaries, boundaries[1:])]
 
         return {"frame_keys": frame_keys, "durations_ms": durations_ms}
 
@@ -158,6 +165,17 @@ def extract_frames(gif_url: str, max_frames: int, job_id: str) -> dict:
 # ── build_gif ─────────────────────────────────────────────────
 
 def build_gif(frames_r2_keys: list[str], durations_ms: list[int], output_key: str) -> None:
+    if not frames_r2_keys or len(frames_r2_keys) != len(durations_ms) or any(ms <= 0 for ms in durations_ms):
+        raise ValidationException("GIF 프레임과 지연 시간 정보가 올바르지 않습니다")
+    # Old checkpoints can contain non-centisecond delays; retain total time on GIF's 10ms clock.
+    boundaries = [0]
+    elapsed_ms = 0
+    for duration_ms in durations_ms:
+        elapsed_ms += duration_ms
+        boundaries.append(round(elapsed_ms / 10))
+    gif_delays = [(end - start) * 10 for start, end in zip(boundaries, boundaries[1:])]
+    if any(ms <= 0 or ms > 655350 for ms in gif_delays):
+        raise ValidationException("GIF 지연 시간이 지원 범위를 벗어났습니다")
     client = _r2_client()
 
     with tempfile.TemporaryDirectory() as tmpdir:
@@ -171,8 +189,9 @@ def build_gif(frames_r2_keys: list[str], durations_ms: list[int], output_key: st
         # ffmpeg concat demuxer용 리스트 생성
         list_path = os.path.join(tmpdir, "frames.txt")
         with open(list_path, "w") as f:
-            for i, duration_ms in enumerate(durations_ms):
+            for i, duration_ms in enumerate(gif_delays):
                 f.write(f"file 'frame_{i:04d}.png'\n")
+                f.write("option framerate 100\n")
                 f.write(f"duration {duration_ms / 1000:.3f}\n")
 
         out_path = os.path.join(tmpdir, "output.gif")
@@ -180,7 +199,8 @@ def build_gif(frames_r2_keys: list[str], durations_ms: list[int], output_key: st
             [
                 FFMPEG,
                 "-f", "concat", "-safe", "0", "-i", list_path,
-                "-loop", "0",
+                "-fps_mode", "passthrough", "-loop", "0",
+                "-final_delay", str(gif_delays[-1] // 10),
                 out_path,
             ],
             capture_output=True,
