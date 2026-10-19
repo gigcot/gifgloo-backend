@@ -109,12 +109,19 @@ class PipelineCallbackService:
         await self._gate_repo.update(gate)
         await self._transaction.commit()
 
-    async def complete(self, job_id: str, run_id: str, draft_key: str, result_key: str) -> None:
+    async def complete(
+        self, job_id: str, run_id: str, draft_key: str, result_key: str,
+        last_edit_elapsed_seconds: float | None = None,
+    ) -> None:
         gate = await self._gate_repo.find_for_update()
         gate.ensure_run(job_id, run_id, datetime.now(timezone.utc))
         job = await self._find_job(job_id)
         if job.status in (CompositionStatus.COMPLETED, CompositionStatus.FAILED):
             return
+        gate.record_edit(
+            job_id, run_id, datetime.now(timezone.utc),
+            last_edit_elapsed_seconds if last_edit_elapsed_seconds is not None else 0,
+        )
         if not await self._user_verification.is_active_user(job.user_id):
             raise AuthorizationException("유효하지 않은 유저입니다")
         draft_asset_id = await self._asset_save.save(
@@ -135,13 +142,20 @@ class PipelineCallbackService:
         PIPELINE_COMPLETE_TOTAL.inc()
         COMPOSITION_COMPLETED_TOTAL.inc()
 
-    async def fail(self, job_id: str, run_id: str, reason: str) -> None:
+    async def fail(
+        self, job_id: str, run_id: str, reason: str,
+        last_edit_elapsed_seconds: float | None = None,
+    ) -> None:
         try:
             gate = await self._gate_repo.find_for_update()
             gate.ensure_run(job_id, run_id, datetime.now(timezone.utc))
             job = await self._find_job(job_id)
             if job.status in (CompositionStatus.COMPLETED, CompositionStatus.FAILED):
                 return
+            gate.record_edit(
+                job_id, run_id, datetime.now(timezone.utc),
+                last_edit_elapsed_seconds if last_edit_elapsed_seconds is not None else 0,
+            )
             await self._credit.refund(job.user_id, job.id)
             CREDIT_REFUND_TOTAL.inc()
             job.fail(reason)

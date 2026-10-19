@@ -27,6 +27,8 @@ SPEC_MODEL = "gpt-6-luna"
 IMAGE_MODEL = "gpt-image-2.5-flare"
 LEGACY_IMAGE_MODEL = "gpt-image-1.5"
 DRAFT_SIZE = "1024x1024"
+IMAGE_START_INTERVAL_SECONDS = 0.5
+MAX_IMAGE_WORKERS = 20
 GIF_PROCESSOR_FUNCTION = "gifgloo-gif-processor"
 
 INTERNAL_SECRET = os.environ.get("INTERNAL_SECRET", "")
@@ -111,6 +113,27 @@ STAGE_ORDER = ["EXTRACTING_FRAMES", "ANALYZING", "GENERATING_DRAFT", "COMPOSITIN
 openai_client = OpenAI(max_retries=6)
 register_heif_opener()
 
+
+class ImageRequestPacer:
+    def __init__(self):
+        self._lock = Lock()
+        self._last_started_at: float | None = None
+
+    def start(self) -> float:
+        with self._lock:
+            if self._last_started_at is not None:
+                remaining = self._last_started_at + IMAGE_START_INTERVAL_SECONDS - time.monotonic()
+                if remaining > 0:
+                    time.sleep(remaining)
+            self._last_started_at = time.monotonic()
+            return self._last_started_at
+
+    def elapsed_seconds(self) -> float | None:
+        with self._lock:
+            if self._last_started_at is None:
+                return None
+            return time.monotonic() - self._last_started_at
+
 MAX_TARGET_UPLOAD_BYTES = 15 * 1024 * 1024
 MAX_TARGET_IMAGE_PIXELS = 20_000_000
 MAX_TARGET_IMAGE_EDGE = 2048
@@ -191,18 +214,18 @@ def _record_edit(callback_url: str, job_id: str, run_id: str, elapsed_seconds: f
     _ec2_post(callback_url, f"/compositions/{job_id}/edit-started", {"run_id": run_id, "elapsed_seconds": elapsed_seconds})
 
 
-def _complete(callback_url: str, job_id: str, run_id: str, draft_key: str, result_key: str) -> None:
+def _complete(callback_url: str, job_id: str, run_id: str, draft_key: str, result_key: str, last_edit_elapsed_seconds: float | None) -> None:
     try:
-        _ec2_post(callback_url, f"/compositions/{job_id}/complete", {"run_id": run_id, "draft_key": draft_key, "result_key": result_key})
+        _ec2_post(callback_url, f"/compositions/{job_id}/complete", {"run_id": run_id, "draft_key": draft_key, "result_key": result_key, "last_edit_elapsed_seconds": last_edit_elapsed_seconds})
     except urllib.request.HTTPError as e:
         if e.code == 409:
             return
         raise
 
 
-def _fail(callback_url: str, job_id: str, run_id: str, reason: str) -> None:
+def _fail(callback_url: str, job_id: str, run_id: str, reason: str, last_edit_elapsed_seconds: float | None) -> None:
     try:
-        _ec2_post(callback_url, f"/compositions/{job_id}/fail", {"run_id": run_id, "reason": reason})
+        _ec2_post(callback_url, f"/compositions/{job_id}/fail", {"run_id": run_id, "reason": reason, "last_edit_elapsed_seconds": last_edit_elapsed_seconds})
     except urllib.request.HTTPError as e:
         if e.code == 409:
             return
@@ -442,7 +465,7 @@ def analyze(frame_keys: list[str], target_key: str) -> dict:
     return spec
 
 
-def generate_draft(target_key: str, ref_frame_key: str | None, spec: dict, draft_key: str, callback_url: str, job_id: str, run_id: str) -> float:
+def generate_draft(target_key: str, ref_frame_key: str | None, spec: dict, draft_key: str, callback_url: str, job_id: str, run_id: str, pacer: ImageRequestPacer) -> None:
     r2 = _r2_client()
 
 
@@ -454,7 +477,7 @@ def generate_draft(target_key: str, ref_frame_key: str | None, spec: dict, draft
     images.append(("target.png", io.BytesIO(_download(r2, target_key)), "image/png"))
 
     _record_edit(callback_url, job_id, run_id)
-    draft_started_at = time.monotonic()
+    pacer.start()
     response = openai_client.with_options(max_retries=0).images.edit(
         model=LEGACY_IMAGE_MODEL if legacy else IMAGE_MODEL,
         image=images,
@@ -465,7 +488,6 @@ def generate_draft(target_key: str, ref_frame_key: str | None, spec: dict, draft
         output_format="png",
     )
     _upload_png(r2, draft_key, base64.b64decode(response.data[0].b64_json))
-    return draft_started_at
 
 
 def _composite_one(r2, openai_client, frame_data: bytes, draft_data: bytes, spec: dict, frame_idx: int, job_id: str, mark_edit_started, output_size: str) -> str:
@@ -490,7 +512,7 @@ def _composite_one(r2, openai_client, frame_data: bytes, draft_data: bytes, spec
     return output_key
 
 
-def composite_frames(job_id: str, run_id: str, callback_url: str, frame_keys: list[str], draft_key: str, spec: dict) -> dict:
+def composite_frames(job_id: str, run_id: str, callback_url: str, frame_keys: list[str], draft_key: str, spec: dict, pacer: ImageRequestPacer) -> dict:
     r2 = _r2_client()
     draft_data = _download(r2, draft_key)
     frames = [_download(r2, frame_key) for frame_key in frame_keys]
@@ -501,24 +523,17 @@ def composite_frames(job_id: str, run_id: str, callback_url: str, frame_keys: li
         output_size = _frame_output_size(frames[0])
     _record_edit(callback_url, job_id, run_id)
 
-    last_edit_started_at = None
-    edit_lock = Lock()
-
-    def mark_edit_started() -> None:
-        nonlocal last_edit_started_at
-        with edit_lock:
-            last_edit_started_at = time.monotonic()
-
     try:
-        with ThreadPoolExecutor(max_workers=len(frame_keys)) as executor:
+        with ThreadPoolExecutor(max_workers=min(MAX_IMAGE_WORKERS, len(frame_keys))) as executor:
             futures = [
-                executor.submit(_composite_one, r2, openai_client, frame_data, draft_data, spec, i, job_id, mark_edit_started, output_size)
+                executor.submit(_composite_one, r2, openai_client, frame_data, draft_data, spec, i, job_id, pacer.start, output_size)
                 for i, frame_data in enumerate(frames)
             ]
             composited_keys = [f.result() for f in futures]
     finally:
-        if last_edit_started_at is not None:
-            _record_edit(callback_url, job_id, run_id, time.monotonic() - last_edit_started_at)
+        elapsed = pacer.elapsed_seconds()
+        if elapsed is not None:
+            _record_edit(callback_url, job_id, run_id, elapsed)
 
     return {"composited_keys": composited_keys}
 
@@ -537,6 +552,7 @@ def run_pipeline(event: dict, run_id: str) -> None:
     target_key = _target_key(job_id)
     draft_key = _draft_key(job_id)
     result_key = _result_key(job_id)
+    pacer = ImageRequestPacer()
 
     try:
         _normalize_target(r2, target_key, event.get("target_upload_key"))
@@ -564,15 +580,11 @@ def run_pipeline(event: dict, run_id: str) -> None:
                 _validate_spec(spec_data, len(frame_keys))
                 ref_frame_key = frame_keys[spec_data["draft"]["reference_frame"]]
             _checkpoint(callback_url, job_id, run_id, "GENERATING_DRAFT", spec=spec_data)
-            draft_started_at = generate_draft(target_key, ref_frame_key, spec_data, draft_key, callback_url, job_id, run_id)
-        else:
-            draft_started_at = None
+            generate_draft(target_key, ref_frame_key, spec_data, draft_key, callback_url, job_id, run_id, pacer)
 
         if _should_run("COMPOSITING", resume_from):
             _checkpoint(callback_url, job_id, run_id, "COMPOSITING")
-            if draft_started_at is not None:
-                time.sleep(max(0, 65 - (time.monotonic() - draft_started_at)))
-            composite_frames(job_id, run_id, callback_url, frame_keys, draft_key, spec_data)
+            composite_frames(job_id, run_id, callback_url, frame_keys, draft_key, spec_data, pacer)
 
         _checkpoint(callback_url, job_id, run_id, "BUILDING_GIF")
         composited_keys = [_composited_key(job_id, i) for i in range(len(durations_ms))]
@@ -583,10 +595,10 @@ def run_pipeline(event: dict, run_id: str) -> None:
             "output_key": result_key,
         })
 
-        _complete(callback_url, job_id, run_id, draft_key, result_key)
+        _complete(callback_url, job_id, run_id, draft_key, result_key, pacer.elapsed_seconds())
 
     except Exception as e:
-        _fail(callback_url, job_id, run_id, str(e))
+        _fail(callback_url, job_id, run_id, str(e), pacer.elapsed_seconds())
 
 
 # ── 핸들러 ────────────────────────────────────────────────────

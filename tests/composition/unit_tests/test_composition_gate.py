@@ -2,7 +2,7 @@ import unittest
 from datetime import datetime, timedelta, timezone
 
 from composition.domain.aggregates.composition_gate import CompositionGate
-from shared.exceptions import CompositionUnavailableException, InvalidStateException
+from shared.exceptions import CompositionUnavailableException, InvalidStateException, ValidationException
 
 
 NOW = datetime(2026, 9, 18, 12, 0, tzinfo=timezone.utc)
@@ -20,10 +20,10 @@ class CompositionGateTest(unittest.TestCase):
         gate = CompositionGate(None, None, None, NOW)
 
         with self.assertRaises(CompositionUnavailableException) as error:
-            gate.reserve("job-2", NOW + timedelta(seconds=30))
+            gate.reserve("job-2", NOW + timedelta(seconds=10))
 
-        self.assertEqual(error.exception.retry_after_seconds, 35)
-        gate.reserve("job-2", NOW + timedelta(seconds=65))
+        self.assertEqual(error.exception.retry_after_seconds, 5)
+        gate.reserve("job-2", NOW + timedelta(seconds=15))
         self.assertEqual(gate.active_job_id, "job-2")
 
     def test_duplicate_and_expired_runs_cannot_edit_or_release_another_job(self):
@@ -55,10 +55,20 @@ class CompositionGateTest(unittest.TestCase):
         gate.reserve("job-1", NOW)
         gate.claim("job-1", "run-1", NOW)
         gate.record_edit("job-1", "run-1", NOW + timedelta(seconds=1))
-        gate.record_edit("job-1", "run-1", NOW + timedelta(seconds=20), elapsed_seconds=15)
+        gate.record_edit("job-1", "run-1", NOW + timedelta(seconds=20), elapsed_seconds=1)
         gate.record_edit("job-1", "run-1", NOW + timedelta(seconds=21), elapsed_seconds=30)
         gate.release("job-1")
 
         with self.assertRaises(CompositionUnavailableException) as error:
-            gate.reserve("job-2", NOW + timedelta(seconds=65))
-        self.assertEqual(error.exception.retry_after_seconds, 5)
+            gate.reserve("job-2", NOW + timedelta(seconds=30))
+        self.assertEqual(error.exception.retry_after_seconds, 4)
+        gate.reserve("job-2", NOW + timedelta(seconds=34))
+
+    def test_invalid_elapsed_cannot_corrupt_cooldown(self):
+        gate = CompositionGate(None, None, None, None)
+        gate.reserve("job-1", NOW)
+        gate.claim("job-1", "run-1", NOW)
+        for elapsed in (-1, float("nan"), float("inf"), float("-inf"), 661, 1e20):
+            with self.subTest(elapsed=elapsed), self.assertRaises(ValidationException):
+                gate.record_edit("job-1", "run-1", NOW, elapsed)
+        self.assertIsNone(gate.last_edit_sent_at)

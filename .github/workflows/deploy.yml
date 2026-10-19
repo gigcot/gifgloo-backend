@@ -243,8 +243,11 @@ jobs:
           cache-to: type=gha,mode=max
 
   deploy:
-    needs: [changes, build]
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main' && needs.changes.outputs.app == 'true'
+    needs: [changes, build, deploy-lambda]
+    if: >-
+      always() && github.event_name == 'push' && github.ref == 'refs/heads/main' &&
+      needs.changes.outputs.app == 'true' && needs.build.result == 'success' &&
+      (needs.deploy-lambda.result == 'success' || needs.deploy-lambda.result == 'skipped')
     runs-on: ubuntu-latest
     permissions:
       contents: read

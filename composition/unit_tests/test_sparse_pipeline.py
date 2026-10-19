@@ -65,6 +65,17 @@ class MemoryStorage:
         self.files[Key] = Body
 
 
+class FakeClock:
+    def __init__(self):
+        self.now = 100.0
+
+    def monotonic(self):
+        return self.now
+
+    def sleep(self, seconds):
+        self.now += seconds
+
+
 class SparsePlanTest(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
@@ -158,7 +169,7 @@ class SparsePlanTest(unittest.TestCase):
         client.with_options.return_value = client
         client.images.edit.return_value = SimpleNamespace(data=[SimpleNamespace(b64_json=base64.b64encode(png()).decode())])
         with patch.object(self.ai, "_r2_client", return_value=storage), patch.object(self.ai, "openai_client", client), patch.object(self.ai, "_record_edit"):
-            self.ai.generate_draft("target", "selected-base", plan(), "draft", "callback", "job", "run")
+            self.ai.generate_draft("target", "selected-base", plan(), "draft", "callback", "job", "run", self.ai.ImageRequestPacer())
         args = client.images.edit.call_args.kwargs
         self.assertEqual(args["model"], "gpt-image-2.5-flare")
         self.assertEqual(args["size"], "1024x1024")
@@ -182,7 +193,7 @@ class SparsePlanTest(unittest.TestCase):
 
         client.images.edit.side_effect = edit
         with patch.object(self.ai, "_r2_client", return_value=storage), patch.object(self.ai, "openai_client", client), patch.object(self.ai, "_record_edit"):
-            result = self.ai.composite_frames("job", "run", "callback", ["f0", "f1", "f2"], "draft", plan())
+            result = self.ai.composite_frames("job", "run", "callback", ["f0", "f1", "f2"], "draft", plan(), self.ai.ImageRequestPacer())
         self.assertEqual(result["composited_keys"], [f"temp/job/composited_{i:04d}.png" for i in range(3)])
         self.assertEqual(len(inputs), 3)
         self.assertEqual({args["image"][0][1].getvalue() for args in inputs}, {storage.files[k] for k in ("f0", "f1", "f2")})
@@ -200,8 +211,8 @@ class SparsePlanTest(unittest.TestCase):
         client.with_options.return_value = client
         client.images.edit.return_value = SimpleNamespace(data=[SimpleNamespace(b64_json=base64.b64encode(png()).decode())])
         with patch.object(self.ai, "_r2_client", return_value=storage), patch.object(self.ai, "openai_client", client), patch.object(self.ai, "_record_edit"):
-            self.ai.generate_draft("target", None, legacy_plan(), "draft", "callback", "job", "run")
-            self.ai.composite_frames("job", "run", "callback", ["f0"], "draft", legacy_plan())
+            self.ai.generate_draft("target", None, legacy_plan(), "draft", "callback", "job", "run", self.ai.ImageRequestPacer())
+            self.ai.composite_frames("job", "run", "callback", ["f0"], "draft", legacy_plan(), self.ai.ImageRequestPacer())
         for call in client.images.edit.call_args_list:
             self.assertEqual(call.kwargs["model"], "gpt-image-1.5")
             self.assertEqual(call.kwargs["size"], "1024x1024")
@@ -214,7 +225,7 @@ class SparsePlanTest(unittest.TestCase):
         client.images.edit.side_effect = ExternalServiceException("test image failure")
         with patch.object(self.ai, "_r2_client", return_value=storage), patch.object(self.ai, "openai_client", client), patch.object(self.ai, "_record_edit"):
             with self.assertRaises(ExternalServiceException):
-                self.ai.composite_frames("job", "run", "callback", ["f0"], "draft", plan())
+                self.ai.composite_frames("job", "run", "callback", ["f0"], "draft", plan(), self.ai.ImageRequestPacer())
         client.images.edit.assert_called_once()
         client.with_options.assert_called_once_with(max_retries=0)
         self.assertNotIn("temp/job/composited_0000.png", storage.files)
@@ -252,10 +263,73 @@ class SparsePlanTest(unittest.TestCase):
                 if draft.called:
                     self.assertEqual(draft.call_args.args[1], "temp/job/frame_0000.png")
                     self.assertEqual(checkpoint.call_args_list[-3].kwargs["spec"], plan())
-                    sleep.assert_called_once_with(55)
+                    sleep.assert_not_called()
                 else:
                     sleep.assert_not_called()
                 self.assertEqual(gif.call_args.args[0]["durations_ms"], [130, 130])
+
+    def test_twenty_concurrent_starts_are_spaced_and_elapsed_tracks_latest_start(self):
+        clock = FakeClock()
+        with patch.object(self.ai.time, "monotonic", clock.monotonic), patch.object(self.ai.time, "sleep", clock.sleep):
+            pacer = self.ai.ImageRequestPacer()
+            with self.ai.ThreadPoolExecutor(max_workers=20) as executor:
+                starts = list(executor.map(lambda _: pacer.start(), range(20)))
+            self.assertEqual(sorted(starts), [100 + index * .5 for index in range(20)])
+            clock.sleep(3)
+            self.assertEqual(pacer.elapsed_seconds(), 3)
+
+    def test_one_and_twenty_frame_runs_and_resume_share_pacing_without_fixed_wait(self):
+        for count in (1, 20):
+            for resume in (None, "COMPOSITING"):
+                with self.subTest(count=count, resume=resume):
+                    self._run_paced_pipeline(count, resume)
+
+    def test_final_failure_retains_last_start_when_intermediate_callback_fails(self):
+        self._run_paced_pipeline(20, None, fail_last_record=True)
+
+    def _run_paced_pipeline(self, count, resume, fail_last_record=False):
+        clock = FakeClock()
+        storage = MemoryStorage({f"temp/job/frame_{i:04d}.png": png() for i in range(count)})
+        storage.files["compositions/job/target.png"] = png()
+        storage.files["compositions/job/draft.png"] = png()
+        client = Mock()
+        client.with_options.return_value = client
+        starts = []
+
+        def edit(**kwargs):
+            starts.append(clock.monotonic())
+            return SimpleNamespace(data=[SimpleNamespace(b64_json=base64.b64encode(png()).decode())])
+
+        client.images.edit.side_effect = edit
+        event = {"job_id": "job", "gif_url": "source", "callback_url": "callback", "max_frames": 20,
+                 "resume_from": resume, "durations_ms": [130] * count, "spec": plan()}
+        records = 0
+
+        def record(*args):
+            nonlocal records
+            records += 1
+            if fail_last_record and records == 3:
+                raise ExternalServiceException("last edit callback failed")
+
+        with patch.object(self.ai.time, "monotonic", clock.monotonic), patch.object(self.ai.time, "sleep", clock.sleep), \
+             patch.object(self.ai, "_r2_client", return_value=storage), patch.object(self.ai, "openai_client", client), \
+             patch.object(self.ai, "_normalize_target"), patch.object(self.ai, "_checkpoint"), \
+             patch.object(self.ai, "analyze", return_value=plan()), patch.object(self.ai, "_record_edit", side_effect=record), \
+             patch.object(self.ai, "_invoke_gif_processor", return_value={"durations_ms": [130] * count}), \
+             patch.object(self.ai, "_complete") as complete, patch.object(self.ai, "_fail") as fail:
+            self.ai.run_pipeline(event, "run")
+        expected = count + (resume is None)
+        self.assertEqual(len(starts), expected)
+        self.assertEqual(sorted(starts), [100 + index * .5 for index in range(expected)])
+        self.assertTrue(all(call.kwargs == {"max_retries": 0} for call in client.with_options.call_args_list))
+        if fail_last_record:
+            complete.assert_not_called()
+            fail.assert_called_once()
+            self.assertEqual(fail.call_args.args[-1], 0)
+        else:
+            fail.assert_not_called()
+            complete.assert_called_once()
+            self.assertEqual(complete.call_args.args[-1], 0)
 
 
 class GifTimingTest(unittest.TestCase):
