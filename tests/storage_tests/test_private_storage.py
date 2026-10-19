@@ -162,5 +162,5 @@ class LambdaPrivateStorageTest(unittest.TestCase):
         normalize.assert_called_once()
         self.assertIsNone(normalize.call_args.args[2])
         self.assertEqual(invoke.call_args.args[0]["frames_r2_keys"], ["temp/job/composited_0000.png"])
-        complete.assert_called_once_with("https://api.example", "job", "run", "compositions/job/draft.png", "compositions/job/result.gif")
+        complete.assert_called_once_with("https://api.example", "job", "run", "compositions/job/draft.png", "compositions/job/result.gif", None)
         fail.assert_not_called()
