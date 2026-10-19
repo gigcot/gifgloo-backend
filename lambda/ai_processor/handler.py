@@ -27,7 +27,6 @@ SPEC_MODEL = "gpt-6-luna"
 IMAGE_MODEL = "gpt-image-2.5-flare"
 LEGACY_IMAGE_MODEL = "gpt-image-1.5"
 DRAFT_SIZE = "1024x1024"
-IMAGE_START_INTERVAL_SECONDS = 0.5
 MAX_IMAGE_WORKERS = 20
 GIF_PROCESSOR_FUNCTION = "gifgloo-gif-processor"
 
@@ -114,19 +113,14 @@ openai_client = OpenAI(max_retries=6)
 register_heif_opener()
 
 
-class ImageRequestPacer:
+class ImageRequestTracker:
     def __init__(self):
         self._lock = Lock()
         self._last_started_at: float | None = None
 
-    def start(self) -> float:
+    def mark_started(self) -> None:
         with self._lock:
-            if self._last_started_at is not None:
-                remaining = self._last_started_at + IMAGE_START_INTERVAL_SECONDS - time.monotonic()
-                if remaining > 0:
-                    time.sleep(remaining)
             self._last_started_at = time.monotonic()
-            return self._last_started_at
 
     def elapsed_seconds(self) -> float | None:
         with self._lock:
@@ -465,7 +459,7 @@ def analyze(frame_keys: list[str], target_key: str) -> dict:
     return spec
 
 
-def generate_draft(target_key: str, ref_frame_key: str | None, spec: dict, draft_key: str, callback_url: str, job_id: str, run_id: str, pacer: ImageRequestPacer) -> None:
+def generate_draft(target_key: str, ref_frame_key: str | None, spec: dict, draft_key: str, callback_url: str, job_id: str, run_id: str, tracker: ImageRequestTracker) -> None:
     r2 = _r2_client()
 
 
@@ -477,7 +471,7 @@ def generate_draft(target_key: str, ref_frame_key: str | None, spec: dict, draft
     images.append(("target.png", io.BytesIO(_download(r2, target_key)), "image/png"))
 
     _record_edit(callback_url, job_id, run_id)
-    pacer.start()
+    tracker.mark_started()
     response = openai_client.with_options(max_retries=0).images.edit(
         model=LEGACY_IMAGE_MODEL if legacy else IMAGE_MODEL,
         image=images,
@@ -512,7 +506,7 @@ def _composite_one(r2, openai_client, frame_data: bytes, draft_data: bytes, spec
     return output_key
 
 
-def composite_frames(job_id: str, run_id: str, callback_url: str, frame_keys: list[str], draft_key: str, spec: dict, pacer: ImageRequestPacer) -> dict:
+def composite_frames(job_id: str, run_id: str, callback_url: str, frame_keys: list[str], draft_key: str, spec: dict, tracker: ImageRequestTracker) -> dict:
     r2 = _r2_client()
     draft_data = _download(r2, draft_key)
     frames = [_download(r2, frame_key) for frame_key in frame_keys]
@@ -526,12 +520,12 @@ def composite_frames(job_id: str, run_id: str, callback_url: str, frame_keys: li
     try:
         with ThreadPoolExecutor(max_workers=min(MAX_IMAGE_WORKERS, len(frame_keys))) as executor:
             futures = [
-                executor.submit(_composite_one, r2, openai_client, frame_data, draft_data, spec, i, job_id, pacer.start, output_size)
+                executor.submit(_composite_one, r2, openai_client, frame_data, draft_data, spec, i, job_id, tracker.mark_started, output_size)
                 for i, frame_data in enumerate(frames)
             ]
             composited_keys = [f.result() for f in futures]
     finally:
-        elapsed = pacer.elapsed_seconds()
+        elapsed = tracker.elapsed_seconds()
         if elapsed is not None:
             _record_edit(callback_url, job_id, run_id, elapsed)
 
@@ -552,7 +546,7 @@ def run_pipeline(event: dict, run_id: str) -> None:
     target_key = _target_key(job_id)
     draft_key = _draft_key(job_id)
     result_key = _result_key(job_id)
-    pacer = ImageRequestPacer()
+    tracker = ImageRequestTracker()
 
     try:
         _normalize_target(r2, target_key, event.get("target_upload_key"))
@@ -580,11 +574,11 @@ def run_pipeline(event: dict, run_id: str) -> None:
                 _validate_spec(spec_data, len(frame_keys))
                 ref_frame_key = frame_keys[spec_data["draft"]["reference_frame"]]
             _checkpoint(callback_url, job_id, run_id, "GENERATING_DRAFT", spec=spec_data)
-            generate_draft(target_key, ref_frame_key, spec_data, draft_key, callback_url, job_id, run_id, pacer)
+            generate_draft(target_key, ref_frame_key, spec_data, draft_key, callback_url, job_id, run_id, tracker)
 
         if _should_run("COMPOSITING", resume_from):
             _checkpoint(callback_url, job_id, run_id, "COMPOSITING")
-            composite_frames(job_id, run_id, callback_url, frame_keys, draft_key, spec_data, pacer)
+            composite_frames(job_id, run_id, callback_url, frame_keys, draft_key, spec_data, tracker)
 
         _checkpoint(callback_url, job_id, run_id, "BUILDING_GIF")
         composited_keys = [_composited_key(job_id, i) for i in range(len(durations_ms))]
@@ -595,10 +589,10 @@ def run_pipeline(event: dict, run_id: str) -> None:
             "output_key": result_key,
         })
 
-        _complete(callback_url, job_id, run_id, draft_key, result_key, pacer.elapsed_seconds())
+        _complete(callback_url, job_id, run_id, draft_key, result_key, tracker.elapsed_seconds())
 
     except Exception as e:
-        _fail(callback_url, job_id, run_id, str(e), pacer.elapsed_seconds())
+        _fail(callback_url, job_id, run_id, str(e), tracker.elapsed_seconds())
 
 
 # ── 핸들러 ────────────────────────────────────────────────────
