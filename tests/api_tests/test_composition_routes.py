@@ -79,6 +79,7 @@ class _PrepareUploadService:
 class _PipelineCallbackService:
     def __init__(self):
         self.completed = None
+        self.last_edit_elapsed_seconds = None
 
     async def checkpoint(self, *args, **kwargs):
         pass
@@ -86,7 +87,8 @@ class _PipelineCallbackService:
     async def reconcile_expired(self):
         pass
 
-    async def complete(self, job_id: str, run_id: str, draft_key: str, result_key: str):
+    async def complete(self, job_id: str, run_id: str, draft_key: str, result_key: str, last_edit_elapsed_seconds=None):
+        self.last_edit_elapsed_seconds = last_edit_elapsed_seconds
         self.completed = {
             "job_id": job_id,
             "run_id": run_id,
@@ -95,7 +97,7 @@ class _PipelineCallbackService:
         }
 
     async def fail(self, *args, **kwargs):
-        pass
+        self.last_edit_elapsed_seconds = kwargs["last_edit_elapsed_seconds"]
 
 
 class _CompositionStatusService:
@@ -270,6 +272,21 @@ class CompositionRoutesTest(unittest.TestCase):
                 "result_key": "result.gif",
             },
         )
+
+    def test_final_callbacks_validate_and_forward_elapsed(self):
+        for action, fields in (("complete", {"draft_key": "draft", "result_key": "result"}), ("fail", {"reason": "failed"})):
+            for elapsed in (0, 2.5, None, -1, "NaN", "Infinity", 661, 1e20):
+                with self.subTest(action=action, elapsed=elapsed):
+                    response = self.client.post(
+                        f"/internal/compositions/job-1/{action}",
+                        json={"run_id": "run-1", "last_edit_elapsed_seconds": elapsed, **fields},
+                        headers={"X-Internal-Secret": os.environ["INTERNAL_SECRET"]},
+                    )
+                    if elapsed in (-1, "NaN", "Infinity", 661, 1e20):
+                        self.assertEqual(response.status_code, 422)
+                    else:
+                        self.assertEqual(response.status_code, 200)
+                        self.assertEqual(self.callback_service.last_edit_elapsed_seconds, elapsed)
 
     def test_status_returns_credit_summary(self):
         self._set_auth_cookie()

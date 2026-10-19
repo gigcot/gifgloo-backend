@@ -5,6 +5,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, Field
 
 from composition.application.services.pipeline_callback_service import PipelineCallbackService
+from composition.domain.aggregates.composition_gate import RUNNING_LEASE
 from composition.domain.value_objects.composition_stage import CompositionStage
 from config.composition import get_pipeline_callback_service
 
@@ -29,11 +30,13 @@ class CompleteBody(BaseModel):
     run_id: str
     draft_key: str
     result_key: str
+    last_edit_elapsed_seconds: float | None = Field(default=None, ge=0, le=RUNNING_LEASE.total_seconds(), allow_inf_nan=False)
 
 
 class FailBody(BaseModel):
     run_id: str
     reason: str
+    last_edit_elapsed_seconds: float | None = Field(default=None, ge=0, le=RUNNING_LEASE.total_seconds(), allow_inf_nan=False)
 
 
 class RunBody(BaseModel):
@@ -41,7 +44,7 @@ class RunBody(BaseModel):
 
 
 class EditStartedBody(RunBody):
-    elapsed_seconds: float = Field(default=0, ge=0, allow_inf_nan=False)
+    elapsed_seconds: float = Field(default=0, ge=0, le=RUNNING_LEASE.total_seconds(), allow_inf_nan=False)
 
 
 @router.post("/{job_id}/start")
@@ -91,7 +94,10 @@ async def complete(
     service: PipelineCallbackService = Depends(get_pipeline_callback_service),
 ):
     _verify(request)
-    await service.complete(job_id=job_id, run_id=body.run_id, draft_key=body.draft_key, result_key=body.result_key)
+    await service.complete(
+        job_id=job_id, run_id=body.run_id, draft_key=body.draft_key, result_key=body.result_key,
+        last_edit_elapsed_seconds=body.last_edit_elapsed_seconds,
+    )
 
 
 @router.post("/{job_id}/fail")
@@ -102,4 +108,7 @@ async def fail(
     service: PipelineCallbackService = Depends(get_pipeline_callback_service),
 ):
     _verify(request)
-    await service.fail(job_id=job_id, run_id=body.run_id, reason=body.reason)
+    await service.fail(
+        job_id=job_id, run_id=body.run_id, reason=body.reason,
+        last_edit_elapsed_seconds=body.last_edit_elapsed_seconds,
+    )

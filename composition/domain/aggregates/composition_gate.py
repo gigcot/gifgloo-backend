@@ -1,11 +1,11 @@
 from dataclasses import dataclass
 from datetime import datetime, timedelta
-from math import ceil
+from math import ceil, isfinite
 
-from shared.exceptions import CompositionUnavailableException, InvalidStateException
+from shared.exceptions import CompositionUnavailableException, InvalidStateException, ValidationException
 
 
-COOLDOWN = timedelta(seconds=65)
+COOLDOWN = timedelta(seconds=15)
 PENDING_LEASE = timedelta(minutes=4)
 RUNNING_LEASE = timedelta(minutes=11)
 
@@ -42,7 +42,10 @@ class CompositionGate:
             raise InvalidStateException("유효하지 않은 합성 실행입니다")
 
     def record_edit(self, job_id: str, run_id: str, now: datetime, elapsed_seconds: float = 0) -> None:
+        """마지막 전송 시각의 상한을 기록하며, 시각이 불명확하면 현재 시각을 사용한다."""
         self.ensure_run(job_id, run_id, now)
+        if not isfinite(elapsed_seconds) or not 0 <= elapsed_seconds <= RUNNING_LEASE.total_seconds():
+            raise ValidationException("이미지 요청 경과 시간은 실행 임대 시간 이내의 유한한 값이어야 합니다")
         sent_at = now - timedelta(seconds=elapsed_seconds)
         if self.last_edit_sent_at is None or sent_at > self.last_edit_sent_at:
             self.last_edit_sent_at = sent_at
