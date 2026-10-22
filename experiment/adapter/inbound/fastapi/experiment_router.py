@@ -5,6 +5,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, Field
 
 from config.experiment import (
+    get_daily_reward_service,
     get_experiment_survey_status_service,
     get_submit_experiment_survey_service,
 )
@@ -14,6 +15,7 @@ from experiment.application.ports.inbound.get_experiment_survey_status import (
 from experiment.application.ports.inbound.submit_experiment_survey import (
     SubmitExperimentSurveyCommand,
 )
+from experiment.application.services.daily_reward_service import DailyRewardService
 from experiment.application.services.get_experiment_survey_status_service import (
     GetExperimentSurveyStatusService,
 )
@@ -89,3 +91,13 @@ async def submit_exp_001_survey(
         )
     )
     return {"submitted": result.submitted}
+
+
+@router.get("/exp-001/daily-reward")
+async def get_daily_reward_status(request: Request, service: DailyRewardService = Depends(get_daily_reward_service)):
+    return await service.get_status(_get_user_id(request))
+
+
+@router.post("/exp-001/daily-reward")
+async def claim_daily_reward(request: Request, service: DailyRewardService = Depends(get_daily_reward_service)):
+    return await service.claim(_get_user_id(request))
