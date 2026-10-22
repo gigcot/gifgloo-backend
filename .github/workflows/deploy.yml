@@ -170,6 +170,20 @@ jobs:
       - name: Install ffmpeg for composition regressions
         run: sudo apt-get update && sudo apt-get install -y ffmpeg
 
+      - name: Verify daily rewards with concurrent PostgreSQL requests
+        env:
+          DAILY_REWARD_TEST_DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5432/gifgloo_daily_reward_verify
+        run: |
+          python - <<'PY'
+          import os
+          from sqlalchemy import create_engine, text
+          engine = create_engine(os.environ["DATABASE_URL"], isolation_level="AUTOCOMMIT")
+          with engine.connect() as connection:
+              connection.execute(text("CREATE DATABASE gifgloo_daily_reward_verify"))
+          engine.dispose()
+          PY
+          python -m unittest discover -s credit_account/integration_tests -p 'test_*.py'
+
       - name: Verify sparse composition and GIF timing without API calls
         run: python -m unittest discover -s composition/unit_tests -p 'test_sparse_pipeline.py'
 

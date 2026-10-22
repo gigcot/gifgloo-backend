@@ -20,14 +20,6 @@ from experiment.domain.value_objects.experiment_survey_answers import (
 from shared.exceptions import AuthorizationException, ValidationException
 
 
-class Acquisition:
-    def __init__(self, campaign="exp001_run01"):
-        self.campaign = campaign
-
-    async def get_campaign(self, user_id):
-        return self.campaign
-
-
 class Completion:
     def __init__(self, completed=True):
         self.completed = completed
@@ -85,9 +77,8 @@ def valid_command(**changes):
 
 
 class ExperimentSurveyStatusServiceTest(unittest.IsolatedAsyncioTestCase):
-    async def test_eligible_requires_run_campaign_and_completed_composition(self):
+    async def test_completed_composition_is_eligible_without_any_acquisition_dependency(self):
         service = GetExperimentSurveyStatusService(
-            user_acquisition=Acquisition(),
             composition_completion=Completion(),
             response_repo=Responses(),
         )
@@ -101,8 +92,7 @@ class ExperimentSurveyStatusServiceTest(unittest.IsolatedAsyncioTestCase):
 
     async def test_submitted_is_reported_separately_from_eligibility(self):
         service = GetExperimentSurveyStatusService(
-            user_acquisition=Acquisition(campaign="another-run"),
-            composition_completion=Completion(),
+            composition_completion=Completion(completed=False),
             response_repo=Responses(existing=object()),
         )
 
@@ -117,7 +107,6 @@ class ExperimentSurveyStatusServiceTest(unittest.IsolatedAsyncioTestCase):
 class SubmitExperimentSurveyServiceTest(unittest.IsolatedAsyncioTestCase):
     def make_service(
         self,
-        acquisition=None,
         completion=None,
         responses=None,
         rewards=None,
@@ -127,7 +116,6 @@ class SubmitExperimentSurveyServiceTest(unittest.IsolatedAsyncioTestCase):
         self.rewards = rewards or Rewards()
         self.transaction = transaction or Transaction()
         return SubmitExperimentSurveyService(
-            user_acquisition=acquisition or Acquisition(),
             composition_completion=completion or Completion(),
             credit_reward=self.rewards,
             response_repo=self.responses,
@@ -178,7 +166,7 @@ class SubmitExperimentSurveyServiceTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(self.transaction.commits, 1)
 
     async def test_ineligible_user_is_rejected_and_rolled_back(self):
-        service = self.make_service(acquisition=Acquisition(campaign=None))
+        service = self.make_service(completion=Completion(completed=False))
 
         with self.assertRaises(AuthorizationException):
             await service.execute(valid_command())

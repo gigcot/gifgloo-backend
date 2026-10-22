@@ -6,4 +6,5 @@ class CreditSourceType(Enum):
     ADMIN = "ADMIN"
     COMPOSITION = "COMPOSITION"
     EXPERIMENT = "EXPERIMENT"
+    DAILY_REWARD = "DAILY_REWARD"
     LOT = "LOT"

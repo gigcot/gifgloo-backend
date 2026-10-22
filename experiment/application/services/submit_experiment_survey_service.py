@@ -9,9 +9,6 @@ from experiment.application.ports.outbound.domain_bridges.credit_reward_port imp
     CreditRewardPort,
     GrantExperimentRewardCommand,
 )
-from experiment.application.ports.outbound.domain_bridges.user_acquisition_port import (
-    UserAcquisitionPort,
-)
 from experiment.application.ports.outbound.persistence.async_transaction import (
     AsyncTransaction,
 )
@@ -19,7 +16,6 @@ from experiment.application.ports.outbound.persistence.experiment_survey_respons
     ExperimentSurveyResponseRepository,
 )
 from experiment.application.services.experiment_policy import (
-    ACQUISITION_CAMPAIGN,
     EXPERIMENT_CODE,
 )
 from experiment.domain.aggregates.experiment_survey_response import (
@@ -34,13 +30,11 @@ from shared.exceptions import AuthorizationException
 class SubmitExperimentSurveyService:
     def __init__(
         self,
-        user_acquisition: UserAcquisitionPort,
         composition_completion: CompositionCompletionPort,
         credit_reward: CreditRewardPort,
         response_repo: ExperimentSurveyResponseRepository,
         transaction: AsyncTransaction,
     ):
-        self._user_acquisition = user_acquisition
         self._composition_completion = composition_completion
         self._credit_reward = credit_reward
         self._response_repo = response_repo
@@ -68,11 +62,8 @@ class SubmitExperimentSurveyService:
                 await self._transaction.commit()
                 return SubmitExperimentSurveyResult(submitted=True)
 
-            campaign = await self._user_acquisition.get_campaign(command.user_id)
-            if campaign != ACQUISITION_CAMPAIGN:
-                raise AuthorizationException("EXP-001 설문 대상자가 아닙니다")
             if not await self._composition_completion.has_completed(command.user_id):
-                raise AuthorizationException("EXP-001 설문 대상자가 아닙니다")
+                raise AuthorizationException("합성을 1회 이상 완료하면 설문에 참여할 수 있습니다")
 
             response = ExperimentSurveyResponse(
                 experiment_code=EXPERIMENT_CODE,

@@ -10,12 +10,10 @@ from asset.domain.value_objects.storage_url import StorageUrl
 from credit_account.application.services.grant_experiment_reward_service import GrantExperimentRewardService
 from credit_account.unit_tests.test_grant_experiment_reward_service import CreditRepository
 from experiment.adapter.outbound.domain_bridges.credit_reward_adapter import CreditRewardAdapter
-from experiment.adapter.outbound.domain_bridges.user_acquisition_adapter import UserAcquisitionAdapter
 from experiment.application.services.submit_experiment_survey_service import SubmitExperimentSurveyService
 from experiment.unit_tests.test_experiment_survey_services import Completion, Responses, Transaction, valid_command
 from shared.asset_category import AssetCategory
 from shared.exceptions import AuthorizationException
-from user.application.services.get_user_acquisition_campaign_service import GetUserAcquisitionCampaignService
 from user.unit_tests import test_anonymous_sessions as fixtures
 from user.application.ports.inbound.anonymous_session import AnonymousSessionCommand
 from user.domain.value_objects.acquisition import Acquisition
@@ -33,7 +31,6 @@ class AnonymousExistingWorkflowsTest(unittest.IsolatedAsyncioTestCase):
         users = Mock()
         users.find_by_id = AsyncMock(side_effect=fixture.users.find_by_id)
         service = SubmitExperimentSurveyService(
-            UserAcquisitionAdapter(GetUserAcquisitionCampaignService(users)),
             Completion(), CreditRewardAdapter(GrantExperimentRewardService(credit_repo)),
             responses, Transaction(),
         )
