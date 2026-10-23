@@ -1,4 +1,5 @@
 BEGIN TRANSACTION READ ONLY;
+SET LOCAL statement_timeout = '15s';
 
 WITH survey_users AS (
     SELECT user_id, submitted_at
@@ -7,6 +8,7 @@ WITH survey_users AS (
       AND submitted_at >= :'cohort_start'::timestamptz
       AND submitted_at < :'cohort_end'::timestamptz
       AND submitted_at <= :'observed_until'::timestamptz
+      AND user_id != ALL(string_to_array(:'internal_account_ids', ','))
 ), claims AS (
     SELECT l.account_user_id AS user_id,
            min(l.created_at) AS first_claim_at,
